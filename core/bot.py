@@ -118,9 +118,15 @@ class FishingBot:
     # ══════════════════════════════════════════════════════
 
     def _grab(self):
-        """截取 VRChat 窗口客户区"""
-        img, _ = self.screen.grab_window(self.window)
-        return img
+        """截取 VRChat 窗口客户区，保证返回非空 BGR 图像"""
+        try:
+            img, _ = self.screen.grab_window(self.window)
+            if img is not None and img.size > 0:
+                return img
+        except Exception:
+            pass
+        import numpy as np
+        return np.zeros((100, 100, 3), dtype=np.uint8)
 
     def _grab_rotated(self):
         """截取窗口客户区，如果轨道有倾斜角则旋转使轨道变垂直"""
