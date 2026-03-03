@@ -49,6 +49,8 @@ class InputController:
 
         self._use_osc = False
         self._osc_client = None
+        self._osc_hold_active = False
+        self._osc_hold_thread = None
         if use_osc:
             self._init_osc()
 
@@ -72,6 +74,13 @@ class InputController:
                 self._osc_client.send_message("/input/UseRight", value)
             except Exception:
                 pass
+
+    def _osc_hold_loop(self):
+        """后台线程: 持续发送 UseRight=1 直到 _osc_hold_active 变 False"""
+        import threading
+        while self._osc_hold_active:
+            self._osc_send(1)
+            time.sleep(0.012)
 
     # ────────────────── 内部工具 (PostMessage) ──────────────────
 
@@ -143,18 +152,28 @@ class InputController:
         self._post(WM_LBUTTONUP, 0)
 
     def mouse_down(self):
-        """按下左键（小游戏：白条上升）"""
+        """按下左键（小游戏：白条上升）
+        OSC 模式: 启动后台线程持续发送 1（VRChat 每帧重置按钮状态）"""
         if not self.mouse_is_down:
             if self._use_osc:
-                self._osc_send(1)
+                self._osc_hold_active = True
+                import threading
+                self._osc_hold_thread = threading.Thread(
+                    target=self._osc_hold_loop, daemon=True)
+                self._osc_hold_thread.start()
             else:
                 self._post(WM_LBUTTONDOWN, MK_LBUTTON)
             self.mouse_is_down = True
 
     def mouse_up(self):
-        """释放左键（小游戏：白条下降）"""
+        """释放左键（小游戏：白条下降）
+        OSC 模式: 停止后台线程并发送一次 0 确保释放"""
         if self.mouse_is_down:
             if self._use_osc:
+                self._osc_hold_active = False
+                if self._osc_hold_thread:
+                    self._osc_hold_thread.join(timeout=0.1)
+                    self._osc_hold_thread = None
                 self._osc_send(0)
             else:
                 self._post(WM_LBUTTONUP, 0)
@@ -194,8 +213,12 @@ class InputController:
 
     def safe_release(self):
         """安全释放"""
+        self._osc_hold_active = False
         try:
             if self._use_osc:
+                if self._osc_hold_thread:
+                    self._osc_hold_thread.join(timeout=0.1)
+                    self._osc_hold_thread = None
                 self._osc_send(0)
             else:
                 self._post(WM_LBUTTONUP, 0)
