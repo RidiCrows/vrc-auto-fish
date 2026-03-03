@@ -54,7 +54,7 @@ class FishingApp:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("VRC auto fish 263201")
+        self.root.title("VRC auto fish 263301")
         self.root.geometry("580x800")
         self.root.resizable(True, True)
         self.root.minsize(520, 600)
