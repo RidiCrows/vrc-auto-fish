@@ -27,9 +27,14 @@ yolo/runs/fish_detect/weights/last.pt
 yolo26n.pt
 yolov8n.pt
 
+# 补丁/构建产物
+patch/
+patch_*.zip
+patch_all.patch
+*.bak
+
 # 大文件
 *.whl
-patch_*.zip
 
 # IDE
 .vscode/
