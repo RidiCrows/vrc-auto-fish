@@ -41,7 +41,6 @@ HOOK_POST_DELAY     = 0.4         # 提竿后等待 UI 出现 (★ 0.3→0.4)
 VERIFY_FRAMES       = 5           # 主循环连续丢失达到 N 帧后直接判定结束
 GAME_LOOP_INTERVAL  = 0.005       # 小游戏循环间隔 (60FPS游戏, 尽量快)
 CAPTURE_FPS_LIMIT   = 0           # 截图线程最大帧率上限 (0=不限制, 更接近旧版同步手感)
-PIPELINE_LOW_LATENCY = True       # True=低延迟模式(只保留最新结果), False=兼容旧版模式(保守流水线)
 SHOW_DEBUG             = True     # 是否显示debug窗口 (关闭可提升性能)
 DEBUG_OVERLAY_INTERVAL = 0.033    # debug窗口最小刷新间隔(秒) ~30FPS
 DEBUG_OVERLAY_MAX_W    = 1920  # debug窗口最大宽度(像素)
@@ -55,7 +54,7 @@ SHAKE_HEAD_TIME     = 0.02        # 摇头每段按住时长(秒)
 INITIAL_PRESS_TIME  = 0.2         # 开局按压时长(秒)
 SUCCESS_PROGRESS    = 0.55        # 进度条 > 此值判定钓鱼成功 (0~1)
 SKIP_SUCCESS_CHECK  = True        # True=不检查成功/失败,总是点击收杆
-ANTI_STUCK_MODE     = "shake"     # "shake"=摇头防卡杆, "jump"=跳跃防卡杆
+ANTI_STUCK_MODE     = "jump"      # "shake"=摇头防卡杆, "jump"=跳跃防卡杆
 MINIGAME_TIMEOUT    = 120.0       # 小游戏最长持续时间 (秒), 超过强制结束
 UI_CHECK_FRAMES     = 30           # 每N帧检查一次轨道是否还在 (15→30, 降低检查频率)
 UI_GONE_LIMIT       = 4            # 连续N次轨道检查失败 → 判定游戏结束 (2→4)

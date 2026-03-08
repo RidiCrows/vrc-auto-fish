@@ -205,7 +205,7 @@ class FishingBot:
             self.input.click()
             if self._wait_with_minigame_preempt(0.15, "🎣 抛竿后摇杆等待"):
                 return True
-            mode = getattr(config, "ANTI_STUCK_MODE", "shake")
+            mode = getattr(config, "ANTI_STUCK_MODE", "jump")
             if mode == "jump":
                 log.info("[🎣 抛竿] 抛竿 → 跳跃防卡杆")
                 self.input.jump_toggle()
@@ -812,10 +812,9 @@ class FishingBot:
         _prev_green = 0.0
 
         # ── 双缓冲流水线：启动截图线程与检测线程 ──
-        _low_latency_mode = getattr(config, "PIPELINE_LOW_LATENCY", True)
-        _queue_size = 1 if _low_latency_mode else 2
-        _frame_q   = queue.Queue(maxsize=_queue_size)   # 帧缓冲区 (截图→检测)
-        _result_q  = queue.Queue(maxsize=_queue_size)   # 结果缓冲区 (检测→主循环)
+        # 固定使用最新帧/最新结果策略，尽量保持接近改流水线前的 PD 控制手感。
+        _frame_q   = queue.Queue(maxsize=1)   # 帧缓冲区 (截图→检测)
+        _result_q  = queue.Queue(maxsize=1)   # 结果缓冲区 (检测→主循环)
         _stop_pipe = threading.Event()
         _shared_params = {
             'search_region':     search_region,
@@ -839,10 +838,7 @@ class FishingBot:
             daemon=True, name="FishDetect")
         _cap_t.start()
         _det_t.start()
-        _mode_text = "低延迟模式" if _low_latency_mode else "兼容旧版模式"
-        log.info(
-            f"[流水线] 截图线程 & 检测线程已启动 ({_mode_text}, 队列={_queue_size})"
-        )
+        log.info("[流水线] 截图线程 & 检测线程已启动 (最新结果模式, 队列=1)")
 
         try:
             while self.running:
@@ -851,13 +847,12 @@ class FishingBot:
                     _pipe = _result_q.get(timeout=0.5)
                 except queue.Empty:
                     continue
-                if _low_latency_mode:
-                    # 低延迟模式下只处理最新结果，尽量降低流水线积压带来的手感延迟。
-                    while True:
-                        try:
-                            _pipe = _result_q.get_nowait()
-                        except queue.Empty:
-                            break
+                # 只处理最新结果，尽量降低流水线积压带来的手感延迟。
+                while True:
+                    try:
+                        _pipe = _result_q.get_nowait()
+                    except queue.Empty:
+                        break
                 (screen_raw, screen,
                  _pipe_fish, _pipe_bar, _pipe_progress,
                  _pipe_mk, _pipe_bs, _pipe_track) = _pipe
