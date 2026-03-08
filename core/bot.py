@@ -432,8 +432,8 @@ class FishingBot:
 
     def _capture_worker_fn(self, frame_q: queue.Queue,
                            stop_evt: threading.Event):
-        """截图线程：持续截取屏幕并放入帧缓冲区（maxsize=2，满时丢弃旧帧）。"""
-        _fps_limit = getattr(config, 'CAPTURE_FPS_LIMIT', 60)
+        """截图线程：持续截取屏幕并放入帧缓冲区（只保留最新帧）。"""
+        _fps_limit = getattr(config, 'CAPTURE_FPS_LIMIT', 0)
         _min_interval = (1.0 / _fps_limit) if _fps_limit > 0 else 0.0
         _last_cap = 0.0
         while not stop_evt.is_set():
@@ -812,8 +812,10 @@ class FishingBot:
         _prev_green = 0.0
 
         # ── 双缓冲流水线：启动截图线程与检测线程 ──
-        _frame_q   = queue.Queue(maxsize=2)   # 帧缓冲区 (截图→检测)
-        _result_q  = queue.Queue(maxsize=2)   # 结果缓冲区 (检测→主循环)
+        _low_latency_mode = getattr(config, "PIPELINE_LOW_LATENCY", True)
+        _queue_size = 1 if _low_latency_mode else 2
+        _frame_q   = queue.Queue(maxsize=_queue_size)   # 帧缓冲区 (截图→检测)
+        _result_q  = queue.Queue(maxsize=_queue_size)   # 结果缓冲区 (检测→主循环)
         _stop_pipe = threading.Event()
         _shared_params = {
             'search_region':     search_region,
@@ -837,7 +839,10 @@ class FishingBot:
             daemon=True, name="FishDetect")
         _cap_t.start()
         _det_t.start()
-        log.info("[流水线] 截图线程 & 检测线程已启动")
+        _mode_text = "低延迟模式" if _low_latency_mode else "兼容旧版模式"
+        log.info(
+            f"[流水线] 截图线程 & 检测线程已启动 ({_mode_text}, 队列={_queue_size})"
+        )
 
         try:
             while self.running:
@@ -846,6 +851,13 @@ class FishingBot:
                     _pipe = _result_q.get(timeout=0.5)
                 except queue.Empty:
                     continue
+                if _low_latency_mode:
+                    # 低延迟模式下只处理最新结果，尽量降低流水线积压带来的手感延迟。
+                    while True:
+                        try:
+                            _pipe = _result_q.get_nowait()
+                        except queue.Empty:
+                            break
                 (screen_raw, screen,
                  _pipe_fish, _pipe_bar, _pipe_progress,
                  _pipe_mk, _pipe_bs, _pipe_track) = _pipe

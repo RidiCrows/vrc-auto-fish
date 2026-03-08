@@ -240,6 +240,21 @@ class FishingApp:
             "因为游戏成功需要点一次才能收杆，失败则不用点。\n"
             "很多人反馈在成功判定处卡住，开启此选项可避免。")
 
+        self.var_pipeline_low_latency = tk.BooleanVar(
+            value=getattr(config, "PIPELINE_LOW_LATENCY", True))
+        chk_pipeline = ttk.Checkbutton(
+            frm_toggles,
+            text="低延迟模式",
+            variable=self.var_pipeline_low_latency,
+            command=self._on_pipeline_mode_toggle,
+        )
+        chk_pipeline.pack(side="left", padx=4)
+        self._create_tooltip(
+            chk_pipeline,
+            "开启: 优先最新帧和最新检测结果，控制更跟手。\n"
+            "关闭: 切换为兼容旧版模式，保留更保守的流水线节奏。",
+        )
+
         ttk.Label(frm_toggles, text="区域:").pack(side="left", padx=(10, 2))
         self.var_roi = tk.StringVar(value="未设置 (全屏搜索)")
         self.lbl_roi = ttk.Label(frm_toggles, textvariable=self.var_roi,
@@ -555,6 +570,9 @@ class FishingApp:
         if hasattr(self, 'var_skip_success'):
             self.var_skip_success.set(False)
         self._update_success_threshold_state()
+        config.PIPELINE_LOW_LATENCY = True
+        if hasattr(self, 'var_pipeline_low_latency'):
+            self.var_pipeline_low_latency.set(True)
         config.ANTI_STUCK_MODE = "shake"
         if hasattr(self, 'var_anti_mode'):
             self.var_anti_mode.set("shake")
@@ -586,6 +604,7 @@ class FishingApp:
         data["SHOW_DEBUG"] = config.SHOW_DEBUG
         data["FISH_WHITELIST"] = config.FISH_WHITELIST
         data["SKIP_SUCCESS_CHECK"] = config.SKIP_SUCCESS_CHECK
+        data["PIPELINE_LOW_LATENCY"] = config.PIPELINE_LOW_LATENCY
         data["ANTI_STUCK_MODE"] = config.ANTI_STUCK_MODE
         data["SHAKE_HEAD_TIME"] = config.SHAKE_HEAD_TIME
         data["GROUPED_PARAMS_UI"] = self.var_grouped_params.get()
@@ -649,6 +668,12 @@ class FishingApp:
                     if hasattr(self, 'var_skip_success'):
                         self.var_skip_success.set(config.SKIP_SUCCESS_CHECK)
                     self._update_success_threshold_state()
+                    loaded.append(attr)
+                elif attr == "PIPELINE_LOW_LATENCY":
+                    config.PIPELINE_LOW_LATENCY = bool(val)
+                    if hasattr(self, 'var_pipeline_low_latency'):
+                        self.var_pipeline_low_latency.set(
+                            config.PIPELINE_LOW_LATENCY)
                     loaded.append(attr)
                 elif attr == "ANTI_STUCK_MODE":
                     if val == "crouch":
@@ -873,6 +898,15 @@ class FishingApp:
         self._save_settings()
         state = "开启 (跳过最终进度判定)" if config.SKIP_SUCCESS_CHECK else "关闭"
         self._log_msg(f"[设置] 跳过成功检查: {state}")
+
+    def _on_pipeline_mode_toggle(self):
+        """切换 流水线低延迟模式"""
+        config.PIPELINE_LOW_LATENCY = self.var_pipeline_low_latency.get()
+        self._save_settings()
+        if config.PIPELINE_LOW_LATENCY:
+            self._log_msg("[设置] 流水线模式: 低延迟模式（优先最新结果）")
+        else:
+            self._log_msg("[设置] 流水线模式: 兼容旧版模式（更保守）")
 
     def _on_anti_mode_change(self):
         """切换 防卡杆模式"""
