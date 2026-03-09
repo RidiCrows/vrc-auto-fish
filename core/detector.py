@@ -873,6 +873,11 @@ class ImageDetector:
 
         roi = screen[y: y + h, x: x + w]
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, np.array([35, 50, 50]), np.array([85, 255, 255]))
+        # 放宽绿色范围，兼容不同亮度/后处理下偏黄绿或偏青绿的进度条颜色。
+        mask = cv2.inRange(
+            hsv,
+            np.array([25, 30, 30]),
+            np.array([100, 255, 255])
+        )
         total = mask.size
         return float(np.count_nonzero(mask)) / total if total > 0 else 0.0

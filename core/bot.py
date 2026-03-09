@@ -100,6 +100,7 @@ class FishingBot:
 
         # ── 鱼/白条位置平滑 (减少检测抖动) ──
         self._fish_smooth_cy = None      # 平滑后的鱼中心 Y
+        self._bar_smooth_cy = None       # 平滑后的白条中心 Y
         self._current_fish_name = ""     # 当前检测到的鱼模板名 (如 "fish_blue")
         self._bar_locked_cx  = None      # ★ 轨道X轴锁定 (白条+鱼共用)
         self._pool = ThreadPoolExecutor(max_workers=2)
@@ -226,7 +227,7 @@ class FishingBot:
     # ══════════════════════════════════════════════════════
 
     def _detect_ui_once(self, screen, return_bbox=False):
-        """单帧检测: 白条+轨道是否同时出现（YOLO优先，模板兜底）。
+        """单帧检测: 白条是否仍在（YOLO优先，模板兜底）。
         return_bbox=True 时返回 (found, (min_x, min_y, max_x, max_y))"""
         _roi = config.DETECT_ROI
         _use_yolo = config.USE_YOLO and self.yolo is not None
@@ -235,33 +236,23 @@ class FishingBot:
         if _use_yolo:
             try:
                 det = self.yolo.detect(screen, _roi)
-                if det.get("bar") and det.get("track"):
-                    yb, yt = det["bar"], det["track"]
-                    if abs((yb[0]+yb[2]//2) - (yt[0]+yt[2]//2)) < 150:
-                        if return_bbox:
-                            bbox = (min(yb[0], yt[0]), min(yb[1], yt[1]),
-                                    max(yb[0]+yb[2], yt[0]+yt[2]),
-                                    max(yb[1]+yb[3], yt[1]+yt[3]))
-                            return True, bbox
-                        return True
+                if det.get("bar"):
+                    yb = det["bar"]
+                    if return_bbox:
+                        bbox = (yb[0], yb[1], yb[0] + yb[2], yb[1] + yb[3])
+                        return True, bbox
+                    return True
             except Exception:
                 pass
 
         bar = self.detector.find_multiscale(
             screen, "bar", config.THRESH_BAR,
             scales=config.BAR_SCALES, search_region=_roi)
-        track = self.detector.find_multiscale(
-            screen, "track", config.THRESH_TRACK, search_region=_roi)
-        if bar and track:
-            bar_cx = bar[0] + bar[2] // 2
-            track_cx = track[0] + track[2] // 2
-            if abs(bar_cx - track_cx) < 150:
-                if return_bbox:
-                    bbox = (min(bar[0], track[0]), min(bar[1], track[1]),
-                            max(bar[0]+bar[2], track[0]+track[2]),
-                            max(bar[1]+bar[3], track[1]+track[3]))
-                    return True, bbox
-                return True
+        if bar:
+            if return_bbox:
+                bbox = (bar[0], bar[1], bar[0] + bar[2], bar[1] + bar[3])
+                return True, bbox
+            return True
         if return_bbox:
             return False, None
         return False
@@ -269,6 +260,8 @@ class FishingBot:
     def _wait_until_ui_gone(self, timeout=3.0, clear_frames=2):
         """收杆后等待上一轮小游戏 UI 消失，避免串到下一轮。"""
         self.state = "等待UI消失"
+        # 清掉上一阶段遗留的抢占标记，避免收尾阶段把本局残留 UI 串成下一局。
+        self._force_minigame = False
         t0 = time.time()
         clear_count = 0
 
@@ -281,12 +274,13 @@ class FishingBot:
                 ready, fish, bar, progress = False, None, None, None
 
             if ready:
+                clear_count = 0
                 self._show_debug_overlay(
                     screen, fish, bar, progress=progress,
-                    status_text="⚠ 已重新满足小游戏条件，抢占进入"
+                    status_text="⏳ 本局小游戏UI仍存在，等待退场..."
                 )
-                self._set_minigame_preempt(f"{self.state} 阶段检测到小游戏条件")
-                return False
+                time.sleep(0.05)
+                continue
 
             ui_found = self._detect_ui_once(screen)
             if ui_found:
@@ -335,9 +329,9 @@ class FishingBot:
         ready = (fish is not None) and (bar is not None)
         return ready, fish, bar, None
 
-    def _wait_with_minigame_preempt(self, duration, status_text):
+    def _wait_with_minigame_preempt(self, duration, status_text, allow_preempt=True):
         """等待期间持续检测，若满足小游戏条件则立即抢占进入控制。"""
-        if self._force_minigame:
+        if allow_preempt and self._force_minigame:
             return True
         t0 = time.time()
         while self.running and time.time() - t0 < duration:
@@ -354,7 +348,7 @@ class FishingBot:
                 status_text=f"{status_text} ({remain:.1f}s)"
             )
 
-            if ready:
+            if allow_preempt and ready:
                 self._set_minigame_preempt(f"{self.state} 阶段已满足小游戏条件")
                 return True
 
@@ -714,9 +708,7 @@ class FishingBot:
         _fish_id_saved = False # ★ 鱼种识别截图只保存一次
         self._progress_debug_saved = False  # ★ 进度条截图只保存一次
         minigame_start = time.time()   # ★ 计时: 超时强制结束
-        ui_gone_count = 0              # ★ UI消失计数器
         had_good_detection = False     # ★ 是否曾经成功检测到鱼+条
-        track_alive = True             # ★ 轨道是否存活 (定期更新)
         obj_gone_count = 0             # ★ 连续对象不足帧数
         fish_gone_since = None         # ★ 鱼消失开始时间
         bar_gone_since  = None         # ★ 白条消失开始时间
@@ -728,6 +720,7 @@ class FishingBot:
         self._last_hold     = None
         self._last_fish_cy  = None
         self._fish_smooth_cy = None
+        self._bar_smooth_cy  = None
         self._bar_locked_cx  = None
 
         # ── 模板锁定变量（加速后续帧检测） ──
@@ -840,6 +833,43 @@ class FishingBot:
         _det_t.start()
         log.info("[流水线] 截图线程 & 检测线程已启动 (最新结果模式, 队列=1)")
 
+        def _try_rescue_pd(reason: str, attempts: int = 3,
+                           interval_s: float = 0.02) -> bool:
+            nonlocal no_detect, fish_lost, fish_gone_since
+            nonlocal bar_gone_since, obj_gone_count
+            nonlocal had_good_detection, _game_active
+            for i in range(max(1, attempts)):
+                try:
+                    rescue_screen = self._grab()
+                    self._tick_fps()
+                    ready, rescue_fish, rescue_bar, rescue_progress = \
+                        self._detect_minigame_ready_now(rescue_screen)
+                except Exception:
+                    ready = False
+                    rescue_fish = rescue_bar = rescue_progress = None
+
+                if ready:
+                    no_detect = 0
+                    fish_lost = 0
+                    fish_gone_since = None
+                    bar_gone_since = None
+                    obj_gone_count = 0
+                    had_good_detection = True
+                    _game_active = True
+                    self._show_debug_overlay(
+                        rescue_screen, rescue_fish, rescue_bar,
+                        progress=None if _skip_success_check else rescue_progress,
+                        status_text=f"⚠ {reason} 前抢回 PD"
+                    )
+                    log.warning(
+                        f"[⚠ 抢回] {reason} 前重新检测到有效鱼+条，继续 PD 控制"
+                    )
+                    return True
+
+                if i + 1 < attempts:
+                    time.sleep(interval_s)
+            return False
+
         try:
             while self.running:
                 # ── 从接收缓冲区取最新检测结果（最多等待 0.5s）──
@@ -869,23 +899,6 @@ class FishingBot:
                     )
                     break
 
-                # ════════════ 定期检查 UI 是否还存在（使用流水线 track 结果）════════════
-                if frame % config.UI_CHECK_FRAMES == 0 and frame > 10:
-                    track_check = _pipe_track   # 由检测线程提供
-                    if track_check is None:
-                        ui_gone_count += 1
-                        track_alive = False
-                        log.info(
-                            f"[⚠ UI检查] 轨道未检测到 "
-                            f"({ui_gone_count}/{config.UI_GONE_LIMIT})"
-                        )
-                        if ui_gone_count >= config.UI_GONE_LIMIT:
-                            log.info("[📋 结束] 小游戏UI已消失，游戏结束!")
-                            break
-                    else:
-                        ui_gone_count = 0
-                        track_alive = True
-
                 # ★ 每60帧确保鼠标在游戏窗口内
                 if frame % 60 == 0:
                     self.input.ensure_cursor_in_game()
@@ -900,6 +913,8 @@ class FishingBot:
                         if no_detect > 5:
                             self.input.mouse_up()
                         if no_detect >= config.VERIFY_FRAMES:
+                            if _try_rescue_pd("连续丢失结束判定"):
+                                continue
                             log.info(
                                 f"[📋 结束] 连续{no_detect}帧未检测到有效UI，"
                                 f"达到结束帧数 {config.VERIFY_FRAMES}")
@@ -997,8 +1012,27 @@ class FishingBot:
                     elif abs(raw_bcx - self._bar_locked_cx) > _BAR_X_HALF:
                         bar = None
                     if bar is not None:
+                        raw_bar_cy = bar[1] + bar[3] // 2
+                        if self._bar_smooth_cy is None:
+                            self._bar_smooth_cy = float(raw_bar_cy)
+                        else:
+                            # 白条框上下抖动时，限制单帧突变并做 EMA 平滑，
+                            # 避免速度估计被 10px 级抖动放大。
+                            max_jump = max(12.0, bar[3] * 0.60)
+                            delta = raw_bar_cy - self._bar_smooth_cy
+                            if delta > max_jump:
+                                raw_bar_cy = int(self._bar_smooth_cy + max_jump)
+                            elif delta < -max_jump:
+                                raw_bar_cy = int(self._bar_smooth_cy - max_jump)
+                            self._bar_smooth_cy = (
+                                0.45 * raw_bar_cy + 0.55 * self._bar_smooth_cy
+                            )
+                        smooth_bar_cy = int(round(self._bar_smooth_cy))
                         bar = (self._bar_locked_cx - bar[2] // 2,
-                               bar[1], bar[2], bar[3], bar[4])
+                               smooth_bar_cy - bar[3] // 2,
+                               bar[2], bar[3], bar[4])
+                else:
+                    self._bar_smooth_cy = None
 
                 # ════════════ ★ 首次检测到白条 → 锁定Y轴搜索范围 ════════════
                 if bar is not None and not _regions_locked:
@@ -1118,21 +1152,26 @@ class FishingBot:
                     pass
                 elif _use_yolo and _yolo_progress is not None:
                     px, py, pw, ph = _yolo_progress[:4]
-                    pcx = px + pw // 2
-                    strip_w = 5
-                    sx = max(0, pcx - strip_w // 2)
+                    # 直接统计整个进度条内区的绿色占比。
+                    # 旧逻辑只取中间 5px 细条，容易因为框偏移/边框遮挡而长期得到 0%。
+                    pad_x = max(1, int(pw * 0.08))
+                    pad_y = max(1, int(ph * 0.05))
+                    sx = px + pad_x
+                    sy = py + pad_y
+                    sw = max(1, pw - pad_x * 2)
+                    sh = max(1, ph - pad_y * 2)
                     green = self.detector.detect_green_ratio(
-                        screen, (sx, py, strip_w, ph))
+                        screen, (sx, sy, sw, sh))
                     if not self._progress_debug_saved and green > 0:
                         self._progress_debug_saved = True
                         _pad = 20
                         _dx = max(0, px - _pad)
                         _dw = min(pw + _pad * 2, w_scr - _dx)
                         _dbg = screen[py:py + ph, _dx:_dx + _dw].copy()
-                        cv2.rectangle(_dbg, (sx - _dx, 0),
-                                      (sx - _dx + strip_w, ph),
+                        cv2.rectangle(_dbg, (sx - _dx, sy - py),
+                                      (sx - _dx + sw, sy - py + sh),
                                       (0, 255, 0), 1)
-                        _info = f"green={green:.0%} w={strip_w}"
+                        _info = f"green={green:.0%} roi={sw}x{sh}"
                         cv2.putText(_dbg, _info, (2, 16),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.4,
                                     (0, 255, 255), 1)
@@ -1159,8 +1198,12 @@ class FishingBot:
                         screen, fish, _sr_for_progress)
 
                 if green > 0 and _prev_green > 0.01 and (green - _prev_green) > 0.30:
-                    log.debug(f"  进度跳变过大 {_prev_green:.0%}→{green:.0%}，忽略")
-                    green = _prev_green
+                    capped_green = min(green, _prev_green + 0.12)
+                    log.debug(
+                        f"  进度跳变过大 {_prev_green:.0%}→{green:.0%}，"
+                        f"限幅到 {capped_green:.0%}"
+                    )
+                    green = capped_green
 
                 if green > 0:
                     _prev_green = green
@@ -1168,9 +1211,8 @@ class FishingBot:
                     _last_green = green
 
                 # ════════════ 游戏结束检测 ════════════
-                # ★ 统计本帧检测到的对象数量 (鱼/白条/轨道)
-                obj_count = ((fish is not None) + (bar is not None)
-                             + (1 if track_alive else 0))
+                # ★ 统计本帧检测到的对象数量 (仅鱼/白条)
+                obj_count = ((fish is not None) + (bar is not None))
 
                 # 1) 鱼+条都没检测到 → 计数
                 if fish is None and bar is None:
@@ -1184,7 +1226,14 @@ class FishingBot:
                         )
                         self.screen.save_debug(screen, "minigame_lost")
 
+                    # 丢失过程中持续同步复检，用户把镜头移回后可立即抢回 PD。
+                    if no_detect >= 10 and _try_rescue_pd(
+                            "连续丢失中", attempts=4, interval_s=0.02):
+                        continue
+
                     if no_detect >= config.VERIFY_FRAMES:
+                        if _try_rescue_pd("连续丢失结束判定"):
+                            continue
                         log.info(
                             f"[📋 结束] 连续{no_detect}帧未检测到有效UI，"
                             f"达到结束帧数 {config.VERIFY_FRAMES}")
@@ -1205,6 +1254,8 @@ class FishingBot:
                     if fish_lost == 30:
                         log.warning(f"[⚠ 鱼丢失] 连续{fish_lost}帧未检测到鱼")
                     if had_good_detection and fish_lost > config.FISH_LOST_LIMIT:
+                        if _try_rescue_pd("鱼丢失结束判定"):
+                            continue
                         log.info(f"[📋 结束] 鱼已消失{fish_lost}帧，直接判定结束")
                         break
                 else:
@@ -1223,30 +1274,35 @@ class FishingBot:
                 now_t = time.time()
                 if (had_good_detection and fish_gone_since is not None
                         and now_t - fish_gone_since > _timeout):
+                    if _try_rescue_pd("鱼消失超时判定"):
+                        continue
                     elapsed = now_t - fish_gone_since
                     log.info(
                         f"[📋 失败] 鱼连续消失 {elapsed:.1f}s, 直接判定结束")
                     break
                 if (had_good_detection and bar_gone_since is not None
                         and now_t - bar_gone_since > _timeout):
+                    if _try_rescue_pd("白条消失超时判定"):
+                        continue
                     elapsed = now_t - bar_gone_since
                     log.info(
                         f"[📋 失败] 白条连续消失 {elapsed:.1f}s, 直接判定结束")
                     break
 
-                # 3) ★ 对象不足检测: 鱼/条/轨道 至少2个才继续
+                # 3) ★ 对象不足检测: 仅以鱼/条为准
                 if obj_count < config.OBJ_MIN_COUNT:
                     obj_gone_count += 1
                     if obj_gone_count == 1 or obj_gone_count % 10 == 0:
                         has_f = "鱼✓" if fish is not None else "鱼✗"
                         has_b = "条✓" if bar is not None else "条✗"
-                        has_t = "轨道✓" if track_alive else "轨道✗"
                         log.warning(
-                            f"[⚠ 对象不足] {has_f} {has_b} {has_t} "
+                            f"[⚠ 对象不足] {has_f} {has_b} "
                             f"= {obj_count}个 "
                             f"({obj_gone_count}/{config.OBJ_GONE_LIMIT})"
                         )
                     if obj_gone_count >= config.OBJ_GONE_LIMIT:
+                        if _try_rescue_pd("对象不足结束判定"):
+                            continue
                         log.info(
                             f"[📋 结束] 连续{obj_gone_count}帧对象不足,"
                             f"直接判定结束")
@@ -1320,7 +1376,8 @@ class FishingBot:
             log.info("[流水线] 截图线程 & 检测线程已停止")
             if _hook_timeout_retry:
                 self.input.safe_release()
-                if self._wait_with_minigame_preempt(0.3, "⏳ 收杆前等待"):
+                if self._wait_with_minigame_preempt(
+                        0.3, "⏳ 收杆前等待", allow_preempt=False):
                     return None
                 self.input.click()
                 self._wait_until_ui_gone(
@@ -1357,17 +1414,20 @@ class FishingBot:
                 log.info("[🎣 收杆] 录制模式 — 请手动收杆")
             else:
                 self.input.safe_release()
-                if self._wait_with_minigame_preempt(0.5, "⏳ 收杆准备"):
+                if self._wait_with_minigame_preempt(
+                        0.5, "⏳ 收杆准备", allow_preempt=False):
                     return success
 
                 if getattr(config, "SKIP_SUCCESS_CHECK", False):
-                    if self._wait_with_minigame_preempt(0.2, "⏳ 收杆点击前等待"):
+                    if self._wait_with_minigame_preempt(
+                            0.2, "⏳ 收杆点击前等待", allow_preempt=False):
                         return success
                     self.input.click()
                     log.info("[🎣 收杆] 跳过成功检查, 点击收杆")
                     success = True
                 elif success:
-                    if self._wait_with_minigame_preempt(0.2, "⏳ 收杆点击前等待"):
+                    if self._wait_with_minigame_preempt(
+                            0.2, "⏳ 收杆点击前等待", allow_preempt=False):
                         return success
                     self.input.click()
                     log.info("[🎣 收杆] 钓鱼成功, 点击收杆")
@@ -2004,14 +2064,16 @@ class FishingBot:
                 time.sleep(hold)
                 self.input.mouse_up()
                 log.info(
-                    f"  ● [{fname}] fib={fish_in_bar:.2f} "
+                    f"  ● [{fname}] 鱼Y={fish_cy} 条Y={bar_cy} "
+                    f"fib={fish_in_bar:.2f} "
                     f"v={vel:+.0f} → 按 {hold*1000:.0f}ms"
                 )
                 return True
             else:
                 self.input.mouse_up()
                 log.info(
-                    f"  ○ [{fname}] fib={fish_in_bar:.2f} "
+                    f"  ○ [{fname}] 鱼Y={fish_cy} 条Y={bar_cy} "
+                    f"fib={fish_in_bar:.2f} "
                     f"v={vel:+.0f} → 释放"
                 )
                 return False
@@ -2064,7 +2126,7 @@ class FishingBot:
             time.sleep(hold)
             self.input.mouse_up()
             log.info(
-                f"  (仅条) Y={bar_cy} v={vel:+.0f}"
+                f"  (仅条) 条Y={bar_cy} v={vel:+.0f}"
                 f" → 按 {hold*1000:.0f}ms"
             )
             return True
@@ -2113,7 +2175,6 @@ class FishingBot:
                 self.state = "等待下一轮"
                 self._wait_with_minigame_preempt(
                     config.POST_CATCH_DELAY, "⏳ 等待下一轮")
-
             except Exception as e:
                 log.error(f"运行异常: {e}")
                 if not config.IL_RECORD:
