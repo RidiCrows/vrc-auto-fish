@@ -47,9 +47,9 @@ PARAM_GROUPS = [
     ),
     (
         "白条下降控制",
-        "白条下降太快、太飘、回落手感不对时调这里。下降太快兜不住: 先加大“抗重力基准”; 太悬浮: 调小它。",
+        "白条下降太快、太飘、回落手感不对时调这里。下降太快兜不住: 先加大“最短按住/抗重力基准”; 太悬浮: 调小它。",
         [
-            ("最短按住/抗重力基准(ms)", "HOLD_MIN_S", "ms", "基础托举力度, 也是单次最短按住时长, 越大白条越不容易快速下坠"),
+            ("最短按住(ms) / 抗重力基准", "HOLD_MIN_S", "ms", "基础托举力度, 也是单次最短按住时长, 越大白条越不容易快速下坠"),
             ("速度阻尼", "SPEED_DAMPING", "float", "下坠快时自动补按, 上升快时自动减按"),
             ("速度平滑", "VELOCITY_SMOOTH", "float", "速度估计平滑度, 越大越稳但反应略慢"),
             ("死区(px)", "DEAD_ZONE", "int", "鱼靠近中心时允许的误差范围, 越大越不容易频繁点按"),
@@ -239,6 +239,23 @@ class FishingApp:
             "启用后不再检测成功阈值，无论成功失败都点击两次收杆。\n"
             "因为游戏成功需要点一次才能收杆，失败则不用点。\n"
             "很多人反馈在成功判定处卡住，开启此选项可避免。")
+
+        self.var_sync_pd_mode = tk.BooleanVar(
+            value=getattr(config, "SYNC_PD_MODE", True))
+        chk_sync_pd = ttk.Checkbutton(
+            frm_toggles,
+            text="旧版模式（使用旧版参数）",
+            variable=self.var_sync_pd_mode,
+            command=self._on_sync_pd_mode_toggle,
+        )
+        chk_sync_pd.pack(side="left", padx=4)
+        self._create_tooltip(
+            chk_sync_pd,
+            "开启: 小游戏 PD 控制走旧版同步闭环\n"
+            "即截图->检测->控制同线程执行，更接近旧手感。\n"
+            "关闭: 使用当前异步截图/检测流水线。\n"
+            "仅 PD 控制器生效，录制/行为克隆不受影响。",
+        )
 
         ttk.Label(frm_toggles, text="区域:").pack(side="left", padx=(10, 2))
         self.var_roi = tk.StringVar(value="未设置 (全屏搜索)")
@@ -555,6 +572,9 @@ class FishingApp:
         if hasattr(self, 'var_skip_success'):
             self.var_skip_success.set(False)
         self._update_success_threshold_state()
+        config.SYNC_PD_MODE = True
+        if hasattr(self, 'var_sync_pd_mode'):
+            self.var_sync_pd_mode.set(True)
         config.ANTI_STUCK_MODE = "jump"
         if hasattr(self, 'var_anti_mode'):
             self.var_anti_mode.set("jump")
@@ -586,6 +606,7 @@ class FishingApp:
         data["SHOW_DEBUG"] = config.SHOW_DEBUG
         data["FISH_WHITELIST"] = config.FISH_WHITELIST
         data["SKIP_SUCCESS_CHECK"] = config.SKIP_SUCCESS_CHECK
+        data["SYNC_PD_MODE"] = config.SYNC_PD_MODE
         data["ANTI_STUCK_MODE"] = config.ANTI_STUCK_MODE
         data["SHAKE_HEAD_TIME"] = config.SHAKE_HEAD_TIME
         data["GROUPED_PARAMS_UI"] = self.var_grouped_params.get()
@@ -650,6 +671,11 @@ class FishingApp:
                     if hasattr(self, 'var_skip_success'):
                         self.var_skip_success.set(config.SKIP_SUCCESS_CHECK)
                     self._update_success_threshold_state()
+                    loaded.append(attr)
+                elif attr == "SYNC_PD_MODE":
+                    config.SYNC_PD_MODE = bool(val)
+                    if hasattr(self, 'var_sync_pd_mode'):
+                        self.var_sync_pd_mode.set(config.SYNC_PD_MODE)
                     loaded.append(attr)
                 elif attr == "ANTI_STUCK_MODE":
                     if val == "crouch":
@@ -890,6 +916,15 @@ class FishingApp:
         self._save_settings()
         state = "开启 (跳过最终进度判定)" if config.SKIP_SUCCESS_CHECK else "关闭"
         self._log_msg(f"[设置] 跳过成功检查: {state}")
+
+    def _on_sync_pd_mode_toggle(self):
+        """切换 旧版模式（使用旧版参数）"""
+        config.SYNC_PD_MODE = self.var_sync_pd_mode.get()
+        self._save_settings()
+        if config.SYNC_PD_MODE:
+            self._log_msg("[设置] 旧版模式（使用旧版参数）: 开启")
+        else:
+            self._log_msg("[设置] 旧版模式（使用旧版参数）: 关闭（异步流水线）")
 
     def _on_anti_mode_change(self):
         """切换 防卡杆模式"""

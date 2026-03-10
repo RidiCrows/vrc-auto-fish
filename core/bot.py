@@ -586,6 +586,92 @@ class FishingBot:
             except Exception:
                 pass
 
+    def _detect_frame_once(self, scr, use_yolo: bool,
+                           search_region, bar_search_region,
+                           locked_fish_key, locked_fish_scales,
+                           locked_bar_scales, frame_no: int,
+                           yolo_roi, skip_success: bool,
+                           track_cache=None):
+        """同步模式单帧检测，逻辑与检测线程保持一致。"""
+        fish = bar = progress = None
+        matched_key = None
+        bar_scale = 1.0
+        track_det = None
+
+        if use_yolo:
+            _det = self.yolo.detect(scr, roi=yolo_roi)
+            fish = _det.get("fish")
+            bar = _det.get("bar")
+            track_det = _det.get("track")
+            if not skip_success:
+                progress = _det.get("progress")
+            return (fish, bar, progress, matched_key,
+                    bar_scale, track_det, track_cache)
+
+        _FISH_X_HALF = max(config.REGION_X * 2, 80)
+        fish_sr = search_region
+        if search_region and self._bar_locked_cx is not None:
+            sr_x, sr_y, sr_w, sr_h = search_region
+            nx = max(sr_x, self._bar_locked_cx - _FISH_X_HALF)
+            nx2 = min(sr_x + sr_w, self._bar_locked_cx + _FISH_X_HALF)
+            if nx2 - nx > 10:
+                fish_sr = (nx, sr_y, nx2 - nx, sr_h)
+        if self._fish_smooth_cy is not None and fish_sr:
+            sx, sy, sw, sh = fish_sr
+            ny = max(sy, int(self._fish_smooth_cy) - 150)
+            ny2 = min(sy + sh, int(self._fish_smooth_cy) + 150)
+            if ny2 - ny > 30:
+                fish_sr = (sx, ny, sw, ny2 - ny)
+
+        fg, fox, foy = self.detector.prepare_gray(
+            scr, fish_sr, upload_gpu=True)
+        bg, box, boy = self.detector.prepare_gray(
+            scr, bar_search_region, upload_gpu=True)
+        has_cuda = self.detector._use_cuda
+
+        if locked_fish_key:
+            fish_res = self.detector.find_multiscale(
+                scr, locked_fish_key, config.THRESH_FISH, fish_sr,
+                scales=locked_fish_scales,
+                pre_gray=fg, pre_offset=(fox, foy))
+            if fish_res is None and fish_sr is not search_region:
+                fish_res = self.detector.find_multiscale(
+                    scr, locked_fish_key, config.THRESH_FISH, search_region,
+                    scales=locked_fish_scales)
+            fish = fish_res
+            matched_key = locked_fish_key if fish_res else None
+        else:
+            if has_cuda:
+                fish = self.detector.find_fish(
+                    scr, config.THRESH_FISH, fish_sr,
+                    pre_gray=fg, pre_offset=(fox, foy))
+            else:
+                n_keys = len(config.FISH_KEYS)
+                group_size = 2
+                group_count = (n_keys + group_size - 1) // group_size
+                group_idx = frame_no % group_count
+                start_idx = group_idx * group_size
+                keys = config.FISH_KEYS[start_idx:start_idx + group_size]
+                fish = self.detector.find_fish(
+                    scr, config.THRESH_FISH, fish_sr,
+                    pre_gray=fg, pre_offset=(fox, foy),
+                    keys=keys)
+            matched_key = self.detector._last_best_key if fish else None
+
+        bar_scales = locked_bar_scales or config.BAR_SCALES
+        bar = self.detector.find_multiscale(
+            scr, "bar", config.THRESH_BAR, bar_search_region,
+            scales=bar_scales, pre_gray=bg, pre_offset=(box, boy))
+        bar_scale = self.detector._last_scale
+
+        track_interval = max(config.UI_CHECK_FRAMES // 2, 5)
+        if frame_no % track_interval == 0:
+            track_cache = self.detector.find_multiscale(scr, "track", 0.50)
+        track_det = track_cache
+
+        return (fish, bar, progress, matched_key,
+                bar_scale, track_det, track_cache)
+
     # ══════════════════════════════════════════════════════
     #  第4步: 钓鱼小游戏
     # ══════════════════════════════════════════════════════
@@ -804,34 +890,51 @@ class FishingBot:
         _PROGRESS_SKIP_FRAMES = 20
         _prev_green = 0.0
 
-        # ── 双缓冲流水线：启动截图线程与检测线程 ──
-        # 固定使用最新帧/最新结果策略，尽量保持接近改流水线前的 PD 控制手感。
-        _frame_q   = queue.Queue(maxsize=1)   # 帧缓冲区 (截图→检测)
-        _result_q  = queue.Queue(maxsize=1)   # 结果缓冲区 (检测→主循环)
-        _stop_pipe = threading.Event()
-        _shared_params = {
-            'search_region':     search_region,
-            'bar_search_region': bar_search_region,
-            'locked_fish_key':   locked_fish_key,
-            'locked_fish_scales': locked_fish_scales,
-            'locked_bar_scales': locked_bar_scales,
-            'frame':             0,
-            'yolo_roi':          config.DETECT_ROI or self._auto_roi,
-            'skip_success':      _skip_success_check,
-        }
-        _params_lock = threading.Lock()
-        _cap_t = threading.Thread(
-            target=self._capture_worker_fn,
-            args=(_frame_q, _stop_pipe),
-            daemon=True, name="FishCapture")
-        _det_t = threading.Thread(
-            target=self._detect_worker_fn,
-            args=(_frame_q, _result_q, _stop_pipe,
-                  _shared_params, _params_lock, _use_yolo),
-            daemon=True, name="FishDetect")
-        _cap_t.start()
-        _det_t.start()
-        log.info("[流水线] 截图线程 & 检测线程已启动 (最新结果模式, 队列=1)")
+        _sync_pd_mode = (
+            getattr(config, "SYNC_PD_MODE", True)
+            and not config.IL_RECORD
+            and not config.IL_USE_MODEL
+        )
+        _frame_q = None
+        _result_q = None
+        _stop_pipe = None
+        _shared_params = None
+        _params_lock = None
+        _cap_t = None
+        _det_t = None
+        _sync_track_cache = None
+
+        if _sync_pd_mode:
+            log.info("[模式] 小游戏使用旧版模式（使用旧版参数）")
+        else:
+            # ── 双缓冲流水线：启动截图线程与检测线程 ──
+            # 固定使用最新帧/最新结果策略，尽量保持接近改流水线前的 PD 控制手感。
+            _frame_q = queue.Queue(maxsize=1)   # 帧缓冲区 (截图→检测)
+            _result_q = queue.Queue(maxsize=1)  # 结果缓冲区 (检测→主循环)
+            _stop_pipe = threading.Event()
+            _shared_params = {
+                'search_region':     search_region,
+                'bar_search_region': bar_search_region,
+                'locked_fish_key':   locked_fish_key,
+                'locked_fish_scales': locked_fish_scales,
+                'locked_bar_scales': locked_bar_scales,
+                'frame':             0,
+                'yolo_roi':          config.DETECT_ROI or self._auto_roi,
+                'skip_success':      _skip_success_check,
+            }
+            _params_lock = threading.Lock()
+            _cap_t = threading.Thread(
+                target=self._capture_worker_fn,
+                args=(_frame_q, _stop_pipe),
+                daemon=True, name="FishCapture")
+            _det_t = threading.Thread(
+                target=self._detect_worker_fn,
+                args=(_frame_q, _result_q, _stop_pipe,
+                      _shared_params, _params_lock, _use_yolo),
+                daemon=True, name="FishDetect")
+            _cap_t.start()
+            _det_t.start()
+            log.info("[流水线] 截图线程 & 检测线程已启动 (最新结果模式, 队列=1)")
 
         def _try_rescue_pd(reason: str, attempts: int = 3,
                            interval_s: float = 0.02) -> bool:
@@ -872,23 +975,42 @@ class FishingBot:
 
         try:
             while self.running:
-                # ── 从接收缓冲区取最新检测结果（最多等待 0.5s）──
-                try:
-                    _pipe = _result_q.get(timeout=0.5)
-                except queue.Empty:
-                    continue
-                # 只处理最新结果，尽量降低流水线积压带来的手感延迟。
-                while True:
+                if _sync_pd_mode:
+                    next_frame = frame + 1
+                    screen_raw = self._grab()
+                    screen = (self._rotate_for_detection(screen_raw)
+                              if self._need_rotation else screen_raw)
+                    self._tick_fps()
+                    (_pipe_fish, _pipe_bar, _pipe_progress,
+                     _pipe_mk, _pipe_bs, _pipe_track,
+                     _sync_track_cache) = self._detect_frame_once(
+                        screen, _use_yolo,
+                        search_region, bar_search_region,
+                        locked_fish_key, locked_fish_scales,
+                        locked_bar_scales, next_frame,
+                        config.DETECT_ROI or self._auto_roi,
+                        _skip_success_check,
+                        track_cache=_sync_track_cache,
+                    )
+                    frame = next_frame
+                else:
+                    # ── 从接收缓冲区取最新检测结果（最多等待 0.5s）──
                     try:
-                        _pipe = _result_q.get_nowait()
+                        _pipe = _result_q.get(timeout=0.5)
                     except queue.Empty:
-                        break
-                (screen_raw, screen,
-                 _pipe_fish, _pipe_bar, _pipe_progress,
-                 _pipe_mk, _pipe_bs, _pipe_track) = _pipe
+                        continue
+                    # 只处理最新结果，尽量降低流水线积压带来的手感延迟。
+                    while True:
+                        try:
+                            _pipe = _result_q.get_nowait()
+                        except queue.Empty:
+                            break
+                    (screen_raw, screen,
+                     _pipe_fish, _pipe_bar, _pipe_progress,
+                     _pipe_mk, _pipe_bs, _pipe_track) = _pipe
 
-                frame += 1
-                self._tick_fps()
+                    frame += 1
+                    self._tick_fps()
 
                 # ════════════ 超时检测 ════════════
                 elapsed = time.time() - minigame_start
@@ -1358,22 +1480,24 @@ class FishingBot:
                         )
 
                 # —— 同步检测参数供检测线程下帧使用 ——
-                with _params_lock:
-                    _shared_params['search_region']      = search_region
-                    _shared_params['bar_search_region']  = bar_search_region
-                    _shared_params['locked_fish_key']    = locked_fish_key
-                    _shared_params['locked_fish_scales'] = locked_fish_scales
-                    _shared_params['locked_bar_scales']  = locked_bar_scales
-                    _shared_params['frame']              = frame
+                if not _sync_pd_mode:
+                    with _params_lock:
+                        _shared_params['search_region']      = search_region
+                        _shared_params['bar_search_region']  = bar_search_region
+                        _shared_params['locked_fish_key']    = locked_fish_key
+                        _shared_params['locked_fish_scales'] = locked_fish_scales
+                        _shared_params['locked_bar_scales']  = locked_bar_scales
+                        _shared_params['frame']              = frame
 
                 time.sleep(config.GAME_LOOP_INTERVAL)
 
         finally:
-            # —— 停止流水线线程 ——
-            _stop_pipe.set()
-            _cap_t.join(timeout=1.0)
-            _det_t.join(timeout=1.0)
-            log.info("[流水线] 截图线程 & 检测线程已停止")
+            if not _sync_pd_mode:
+                # —— 停止流水线线程 ——
+                _stop_pipe.set()
+                _cap_t.join(timeout=1.0)
+                _det_t.join(timeout=1.0)
+                log.info("[流水线] 截图线程 & 检测线程已停止")
             if _hook_timeout_retry:
                 self.input.safe_release()
                 if self._wait_with_minigame_preempt(
