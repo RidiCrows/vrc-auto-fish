@@ -19,6 +19,7 @@ class AppRuntimeController:
     """封装 FishingApp 的运行时动作。"""
 
     FISH_NAMES = [
+        ("fish_generic", "通用鱼"),
         ("fish_black", "黑鱼"),
         ("fish_white", "白鱼"),
         ("fish_copper", "铜鱼"),

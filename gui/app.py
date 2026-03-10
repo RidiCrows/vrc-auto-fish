@@ -132,13 +132,15 @@ PERSISTED_CONFIG_ATTRS = (
 class FishingApp:
     """VRChat 自动钓鱼 — 主窗口"""
 
+    APP_VERSION = "2603102"
+
     PARAM_DEFAULTS = PARAM_DEFAULTS
     SETTINGS_DEFAULTS = SETTINGS_DEFAULTS
     PERSISTED_CONFIG_ATTRS = PERSISTED_CONFIG_ATTRS
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("VRC auto fish 263302")
+        self.root.title(f"VRC auto fish {self.APP_VERSION}")
         self.root.resizable(True, True)
         self.root.minsize(520, 400)
         self.root.attributes("-topmost", False)
@@ -362,7 +364,7 @@ class FishingApp:
                 col_base = (i % cols_per_row) * 2
                 self._create_param_entry(
                     grid, row, col_base, label, attr, vtype, tip,
-                    label_width=12, entry_width=8, gpad=gpad
+                    label_width=18, entry_width=8, gpad=gpad
                 )
 
     def _render_legacy_params_panel(self):

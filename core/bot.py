@@ -51,6 +51,7 @@ class FishingBot:
 
     # 鱼模板 → 中文名 + 调试框颜色 (BGR)
     FISH_DISPLAY = {
+        "fish_generic": ("通用鱼", (180, 180, 180)),
         "fish_black":   ("黑鱼",  (80, 80, 80)),
         "fish_white":   ("白鱼",  (255, 255, 255)),
         "fish_copper":  ("铜鱼",  (50, 127, 180)),

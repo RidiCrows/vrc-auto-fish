@@ -31,6 +31,17 @@ class YoloDetector:
     CLASS_TRACK = 2
     CLASS_PROGRESS = 3
 
+    @staticmethod
+    def _normalize_fish_class_name(class_name: str) -> str | None:
+        """兼容旧版 fish 与新版 fish_generic / fish_* 多颜色类别。"""
+        if class_name == "fish":
+            return "fish_generic"
+        if class_name == "fish_generic":
+            return class_name
+        if class_name.startswith("fish_"):
+            return class_name
+        return None
+
     def __init__(self, model_path: str, conf: float = 0.5, device="auto"):
         if not _YOLO_AVAILABLE:
             raise ImportError(
@@ -153,10 +164,11 @@ class YoloDetector:
             class_name = self.model.names.get(cls, f"cls{cls}")
             detections["raw"].append((class_name, det))
 
-            if class_name == "fish":
+            fish_name = self._normalize_fish_class_name(class_name)
+            if fish_name:
                 if detections["fish"] is None or conf > detections["fish"][4]:
                     detections["fish"] = det
-                    detections["fish_name"] = "fish"
+                    detections["fish_name"] = fish_name
             elif class_name == "bar":
                 if detections["bar"] is None or conf > detections["bar"][4]:
                     detections["bar"] = det
