@@ -4,10 +4,11 @@ YOLO 目标检测器
 封装 ultralytics YOLO 推理，提供与模板匹配 Detector 兼容的接口。
 
 检测类别:
-  0 = fish     (鱼图标)      → 返回 (x, y, w, h, conf)
-  1 = bar      (白色捕捉条)  → 返回 (x, y, w, h, conf)
-  2 = track    (钓鱼轨道)    → 返回 (x, y, w, h, conf)
-  3 = progress (绿色进度条)  → 返回 (x, y, w, h, conf)
+  0 = fish_generic / 旧 fish
+  1-9 = fish_* 多颜色鱼
+  10 = bar
+  11 = track
+  12 = progress
 """
 
 import os
@@ -30,6 +31,17 @@ class YoloDetector:
     CLASS_BAR = 1
     CLASS_TRACK = 2
     CLASS_PROGRESS = 3
+
+    @staticmethod
+    def _normalize_fish_class_name(class_name: str) -> str | None:
+        """兼容旧版 fish 与新版 fish_generic / fish_* 多颜色类别。"""
+        if class_name == "fish":
+            return "fish_generic"
+        if class_name == "fish_generic":
+            return class_name
+        if class_name.startswith("fish_"):
+            return class_name
+        return None
 
     def __init__(self, model_path: str, conf: float = 0.5, device="auto"):
         if not _YOLO_AVAILABLE:
@@ -153,10 +165,11 @@ class YoloDetector:
             class_name = self.model.names.get(cls, f"cls{cls}")
             detections["raw"].append((class_name, det))
 
-            if class_name == "fish":
+            fish_name = self._normalize_fish_class_name(class_name)
+            if fish_name:
                 if detections["fish"] is None or conf > detections["fish"][4]:
                     detections["fish"] = det
-                    detections["fish_name"] = "fish"
+                    detections["fish_name"] = fish_name
             elif class_name == "bar":
                 if detections["bar"] is None or conf > detections["bar"][4]:
                     detections["bar"] = det

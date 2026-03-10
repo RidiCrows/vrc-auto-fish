@@ -839,6 +839,7 @@ class FishingApp:
     def _on_whitelist(self):
         """弹窗: 勾选要钓的鱼种"""
         FISH_NAMES = [
+            ("fish_generic", "通用鱼"),
             ("fish_black",   "黑鱼"),
             ("fish_white",   "白鱼"),
             ("fish_copper",  "铜鱼"),

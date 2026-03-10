@@ -3,7 +3,16 @@ train: images/train
 val: images/val
 
 names:
-  0: fish
+  0: fish_generic
   1: bar
   2: track
   3: progress
+  4: fish_white
+  5: fish_copper
+  6: fish_green
+  7: fish_blue
+  8: fish_purple
+  9: fish_golden
+  10: fish_red
+  11: fish_pink
+  12: fish_rainbow

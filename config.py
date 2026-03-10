@@ -150,6 +150,7 @@ FISH_KEYS = [
 #  钓鱼白名单 (True=要钓, False=放弃)
 # ═══════════════════════════════════════════════════════════
 FISH_WHITELIST = {
+    "fish_generic": True,   # 通用鱼
     "fish_black":   True,   # 黑鱼
     "fish_white":   True,   # 白鱼
     "fish_copper":  True,   # 铜鱼

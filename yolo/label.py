@@ -5,15 +5,19 @@ YOLO 标注辅助工具
 标注结果保存为 YOLO 格式 (.txt)，完成后自动移到 train/ 目录。
 
 类别:
-  0 = fish     (鱼图标)
-  1 = bar      (白色捕捉条)
-  2 = track    (钓鱼轨道)
-  3 = progress (绿色进度条)
+  F = fish_generic
+  1-9 = 多颜色鱼
+  B = bar
+  T = track
+  P = progress
 
 操作:
   鼠标拖拽  = 画框
-  1/2/3/4   = 设置类别 (fish/bar/track/progress)
+  F/1-9/B/T/P = 设置类别
+  N/M       = 下一个/上一个类别
   Z         = 撤销上一个框
+  X         = 清空当前图片标注
+  H         = 显示帮助
   S / Enter = 保存并下一张
   D         = 删除当前图片 (跳过)
   Q / Esc   = 退出
@@ -30,7 +34,6 @@ import random
 import shutil
 import argparse
 import cv2
-import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
@@ -42,12 +45,87 @@ TRAIN_LBL = os.path.join(BASE, "labels", "train")
 VAL_IMG = os.path.join(BASE, "images", "val")
 VAL_LBL = os.path.join(BASE, "labels", "val")
 
-CLASS_NAMES = {0: "fish", 1: "bar", 2: "track", 3: "progress"}
+# 兼容旧版 yolo/dataset 中 bar/track/progress 的类 ID，不破坏历史标签。
+CLASS_NAMES = {
+    0: "fish_generic",
+    1: "bar",
+    2: "track",
+    3: "progress",
+    4: "fish_white",
+    5: "fish_copper",
+    6: "fish_green",
+    7: "fish_blue",
+    8: "fish_purple",
+    9: "fish_golden",
+    10: "fish_red",
+    11: "fish_pink",
+    12: "fish_rainbow",
+}
+
 CLASS_COLORS = {
-    0: (0, 255, 0),       # fish - green
-    1: (255, 255, 255),   # bar - white
-    2: (255, 100, 0),     # track - orange
-    3: (0, 200, 255),     # progress - yellow-green
+    0: (0, 255, 0),
+    1: (255, 255, 255),
+    2: (255, 100, 0),
+    3: (0, 200, 255),
+    4: (255, 255, 255),
+    5: (60, 140, 200),
+    6: (0, 220, 0),
+    7: (255, 140, 0),
+    8: (220, 80, 220),
+    9: (0, 215, 255),
+    10: (0, 0, 255),
+    11: (200, 120, 255),
+    12: (0, 255, 255),
+}
+
+DISPLAY_NAMES = {
+    0: "通用鱼",
+    1: "白条",
+    2: "轨道",
+    3: "进度条",
+    4: "白鱼",
+    5: "铜鱼",
+    6: "绿鱼",
+    7: "蓝鱼",
+    8: "紫鱼",
+    9: "金鱼",
+    10: "红鱼",
+    11: "粉鱼",
+    12: "彩鱼",
+}
+
+OVERLAY_NAMES = dict(CLASS_NAMES)
+
+KEY_TO_CLASS = {
+    ord("f"): 0,
+    ord("b"): 1,
+    ord("t"): 2,
+    ord("p"): 3,
+    ord("1"): 4,
+    ord("2"): 5,
+    ord("3"): 6,
+    ord("4"): 7,
+    ord("5"): 8,
+    ord("6"): 9,
+    ord("7"): 10,
+    ord("8"): 11,
+    ord("9"): 12,
+}
+
+CLASS_SHORTCUTS = {
+    0: "F",
+    1: "B",
+    2: "T",
+    3: "P",
+    4: "1",
+    5: "2",
+    6: "3",
+    7: "4",
+    8: "5",
+    9: "6",
+    10: "7",
+    11: "8",
+    12: "9",
 }
 
 drawing = False
@@ -58,23 +136,61 @@ img_display = None
 img_orig = None
 
 
+def short_help():
+    return (
+        "[F]=generic [1-9]=fish colors [B]=bar [T]=track [P]=progress "
+        "[N/M]=prev/next [Z]=undo [X]=clear [H]=help [S]=save [D]=skip [Q]=quit"
+    )
+
+
+def print_help():
+    print("=" * 72)
+    print("  YOLO 多颜色鱼标注快捷键")
+    print("=" * 72)
+    for cls_id in sorted(CLASS_NAMES):
+        print(
+            f"  [{CLASS_SHORTCUTS.get(cls_id, '?')}] "
+            f"{DISPLAY_NAMES.get(cls_id, CLASS_NAMES[cls_id])} ({CLASS_NAMES[cls_id]})"
+        )
+    print("  [N]/[M] 下一个/上一个类别")
+    print("  [Z] 撤销  [X] 清空当前图片标注")
+    print("  [S]/[Enter] 保存  [D] 跳过  [Q]/[Esc] 退出")
+    print("=" * 72)
+
+
 def draw_overlay():
     global img_display
     img_display = img_orig.copy()
     h, w = img_display.shape[:2]
+    legend_y = 20
 
     for cls, x1, y1, x2, y2 in boxes:
         color = CLASS_COLORS.get(cls, (128, 128, 128))
+        label = OVERLAY_NAMES.get(cls, CLASS_NAMES.get(cls, "?"))
         cv2.rectangle(img_display, (x1, y1), (x2, y2), color, 2)
-        label = f"{CLASS_NAMES.get(cls, '?')} ({cls})"
-        cv2.putText(img_display, label, (x1, y1 - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        cv2.putText(
+            img_display, f"{label} ({cls})", (x1, max(16, y1 - 5)),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1
+        )
 
-    info = (f"Class: {current_class}={CLASS_NAMES.get(current_class, '?')} | "
-            f"Boxes: {len(boxes)} | "
-            f"[1]fish [2]bar [3]track [4]progress [Z]undo [S]save [D]skip [Q]quit")
-    cv2.putText(img_display, info, (5, h - 10),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+    for cls_id in sorted(CLASS_NAMES):
+        color = CLASS_COLORS.get(cls_id, (128, 128, 128))
+        marker = ">" if cls_id == current_class else " "
+        legend = f"{marker}[{CLASS_SHORTCUTS.get(cls_id, '?')}] {OVERLAY_NAMES.get(cls_id)}"
+        cv2.putText(
+            img_display, legend, (8, legend_y),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 1
+        )
+        legend_y += 18
+
+    info = (
+        f"Class: {OVERLAY_NAMES.get(current_class, '?')} | "
+        f"Boxes: {len(boxes)} | {short_help()}"
+    )
+    cv2.putText(
+        img_display, info, (5, h - 10),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1
+    )
 
 
 def mouse_cb(event, x, y, flags, param):
@@ -162,6 +278,7 @@ def _label_loop(files_with_paths, save_func, mode_name="标注"):
 
     cv2.namedWindow("Label Tool", cv2.WINDOW_NORMAL)
     cv2.setMouseCallback("Label Tool", mouse_cb)
+    print_help()
 
     labeled = 0
     for i, (fpath, existing_lbl) in enumerate(files_with_paths):
@@ -191,33 +308,36 @@ def _label_loop(files_with_paths, save_func, mode_name="标注"):
 
         while True:
             key = cv2.waitKey(0) & 0xFF
+            lower_key = ord(chr(key).lower()) if key < 256 else key
 
-            if key == ord("1"):
-                current_class = 0
-                print(f"    类别 → fish (0)")
+            if lower_key in KEY_TO_CLASS:
+                current_class = KEY_TO_CLASS[lower_key]
+                print(f"    类别 → {DISPLAY_NAMES.get(current_class)} ({CLASS_NAMES.get(current_class)})")
                 draw_overlay()
                 cv2.imshow("Label Tool", img_display)
-            elif key == ord("2"):
-                current_class = 1
-                print(f"    类别 → bar (1)")
+            elif key == ord("n") or key == ord("N"):
+                current_class = (current_class + 1) % len(CLASS_NAMES)
+                print(f"    类别 → {DISPLAY_NAMES.get(current_class)} ({CLASS_NAMES.get(current_class)})")
                 draw_overlay()
                 cv2.imshow("Label Tool", img_display)
-            elif key == ord("3"):
-                current_class = 2
-                print(f"    类别 → track (2)")
-                draw_overlay()
-                cv2.imshow("Label Tool", img_display)
-            elif key == ord("4"):
-                current_class = 3
-                print(f"    类别 → progress (3)")
+            elif key == ord("m") or key == ord("M"):
+                current_class = (current_class - 1) % len(CLASS_NAMES)
+                print(f"    类别 → {DISPLAY_NAMES.get(current_class)} ({CLASS_NAMES.get(current_class)})")
                 draw_overlay()
                 cv2.imshow("Label Tool", img_display)
             elif key == ord("z") or key == ord("Z"):
                 if boxes:
                     removed = boxes.pop()
-                    print(f"    撤销: {CLASS_NAMES.get(removed[0], '?')}")
+                    print(f"    撤销: {DISPLAY_NAMES.get(removed[0], '?')}")
                     draw_overlay()
                     cv2.imshow("Label Tool", img_display)
+            elif key == ord("x") or key == ord("X"):
+                boxes.clear()
+                print("    已清空当前图片全部标注")
+                draw_overlay()
+                cv2.imshow("Label Tool", img_display)
+            elif key == ord("h") or key == ord("H"):
+                print_help()
             elif key == ord("s") or key == ord("S") or key == 13:
                 if not boxes:
                     print("    [跳过] 没有标注框")
@@ -290,7 +410,7 @@ def _relabel_mode():
     """重新标注模式: 遍历 train/ 和 val/ 中已有图片，加载标注后让用户补标"""
     print("=" * 50)
     print("  补标模式 (relabel)")
-    print("  加载已有标注，按 [4] 选择 progress 类别后画框")
+    print("  加载已有标注，按 [F]/[1-9]/[B]/[T]/[P] 选择类别后画框")
     print("  按 [S] 保存  |  [D] 跳过  |  [Q] 退出")
     print("=" * 50)
     print()
