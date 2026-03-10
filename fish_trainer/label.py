@@ -225,11 +225,16 @@ def label_loop(file_pairs, save_func, mode_name):
     print(f"\n[完成] 共{mode_name} {labeled} 张")
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(description="多颜色鱼标注工具")
     parser.add_argument("--split", type=float, default=0.2, help="验证集比例")
     parser.add_argument("--relabel", action="store_true", help="重新标注已有 train/val 数据")
-    args = parser.parse_args()
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     ensure_dataset_dirs()
     if args.relabel:

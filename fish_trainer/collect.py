@@ -20,6 +20,14 @@ from core.window import WindowManager
 from fish_trainer.paths import UNLABELED, ensure_dataset_dirs
 
 
+def build_parser():
+    parser = argparse.ArgumentParser(description="多颜色鱼训练数据采集")
+    parser.add_argument("--fps", type=float, default=2.0, help="每秒截图数")
+    parser.add_argument("--roi", action="store_true", help="只截取已保存的 ROI")
+    parser.add_argument("--max", type=int, default=0, help="最大截图数量，0 表示无限")
+    return parser
+
+
 def load_saved_roi():
     try:
         with open(config.SETTINGS_FILE, "r", encoding="utf-8") as f:
@@ -34,12 +42,9 @@ def load_saved_roi():
     return None
 
 
-def main():
-    parser = argparse.ArgumentParser(description="多颜色鱼训练数据采集")
-    parser.add_argument("--fps", type=float, default=2.0, help="每秒截图数")
-    parser.add_argument("--roi", action="store_true", help="只截取已保存的 ROI")
-    parser.add_argument("--max", type=int, default=0, help="最大截图数量，0 表示无限")
-    args = parser.parse_args()
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     ensure_dataset_dirs()
 
