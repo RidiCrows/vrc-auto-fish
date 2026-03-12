@@ -85,6 +85,22 @@ python -m yolo.label
 python -m yolo.train
 ```
 
+当前 `yolo.label` 已支持更顺手的补标流程：
+
+- `python -m yolo.label --predict-model yolo\runs\fish_detect\weights\best.pt`：用现有模型做自动预标
+- `--auto-predict`：打开图片时自动先跑一遍预测
+- 鼠标右键选中已有框后，会自动切换到该框对应类别
+- 选中框后直接左键重画，会覆盖旧框
+- `J`：回到上一张图片
+- `Ctrl+D`：删除当前图片文件并跳到下一张
+- 翻页时不会自动选中框，但会保留当前激活类别
+
+如果要补标已经进入 `train/` 或 `val/` 的图片：
+
+```bash
+python -m yolo.label --relabel
+```
+
 如果你要做“多颜色鱼”的独立采集 / 标注 / 迁移 / 训练，优先使用新的 `fish_trainer/` 工具链。
 
 - 工具总说明：[`fish_trainer/README.md`](fish_trainer/README.md)
