@@ -122,6 +122,13 @@ python -m fish_trainer.train
 
 EXE 版を使う場合は、パッチ zip をダウンロードして EXE と同じ階層に展開し、`patch/` フォルダが生成されていることを確認してください。起動時に自動で読み込まれます。
 
+配布アセットは単一の共通パッケージです。利用可能な NVIDIA CUDA 環境が検出された場合は GPU を優先し、利用できない場合は別パッケージを用意しなくても自動で CPU にフォールバックします。
+
+## GitHub Actions
+
+- `.github/workflows/test.yml`: `push` / `pull_request` 時に Windows の軽量チェックを実行します
+- `.github/workflows/release-build.yml`: 手動で CUDA パッケージをビルドし、対象 GitHub Release に `7z` アセットをアップロードします
+
 ## License
 
 MIT

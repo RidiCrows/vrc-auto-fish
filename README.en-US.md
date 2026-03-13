@@ -122,6 +122,13 @@ The main README only keeps the overview. For shortcut keys, class definitions, m
 
 If you use the EXE build, download the patch zip, extract it next to the EXE, and make sure a `patch/` folder is created. The program will load the patch automatically on startup.
 
+The release asset is a single universal package. If a usable NVIDIA CUDA environment is detected, the app will prefer GPU execution; otherwise it will automatically fall back to CPU without requiring a separate download.
+
+## GitHub Actions
+
+- `.github/workflows/test.yml`: runs lightweight Windows checks on `push` and `pull_request`
+- `.github/workflows/release-build.yml`: manually builds the CUDA package and uploads a `7z` asset to the target GitHub Release
+
 ## License
 
 MIT

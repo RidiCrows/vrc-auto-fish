@@ -122,6 +122,13 @@ python -m fish_trainer.train
 
 如果使用 EXE 版本，下载补丁 zip 后解压到 EXE 同级目录，确保生成 `patch/` 文件夹即可。程序启动时会自动加载补丁。
 
+发布资产使用单一通用包。若检测到可用的 NVIDIA CUDA 环境，程序会优先使用 GPU；否则会自动回退到 CPU，无需另外下载不同版本。
+
+## GitHub Actions
+
+- `.github/workflows/test.yml`：在 `push` / `pull_request` 时运行 Windows 轻量测试
+- `.github/workflows/release-build.yml`：手动触发 CUDA 构建，并将 `7z` 包上传到指定 GitHub Release
+
 ## License
 
 MIT

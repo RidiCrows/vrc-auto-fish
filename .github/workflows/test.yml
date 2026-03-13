@@ -1,0 +1,47 @@
+name: Windows Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Upgrade pip
+        shell: pwsh
+        run: python -m pip install --upgrade pip
+
+      - name: Install CPU PyTorch
+        shell: pwsh
+        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install project requirements
+        shell: pwsh
+        run: pip install -r requirements.txt
+
+      - name: Import dependency sanity check
+        shell: pwsh
+        run: python -c "import cv2, keyboard, torch, ultralytics"
+
+      - name: Run stable unit tests
+        shell: pwsh
+        run: >
+          python -m unittest
+          tests.test_i18n
+          tests.test_pd_controller
+          tests.test_settings_store
+          tests.test_runtime_controller
+          tests.test_minigame_detection
+          -v

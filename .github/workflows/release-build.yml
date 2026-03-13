@@ -1,0 +1,96 @@
+name: Release CUDA Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: GitHub release tag to create or update
+        required: true
+        type: string
+      asset_name:
+        description: Release asset filename
+        required: false
+        default: AutoFish.7z
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Upgrade pip
+        shell: pwsh
+        run: python -m pip install --upgrade pip
+
+      - name: Install CUDA PyTorch
+        shell: pwsh
+        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+
+      - name: Install project requirements
+        shell: pwsh
+        run: pip install -r requirements.txt
+
+      - name: Install build tools
+        shell: pwsh
+        run: pip install pyinstaller
+
+      - name: Ensure 7-Zip is available
+        shell: pwsh
+        run: |
+          if (-not (Get-Command 7z -ErrorAction SilentlyContinue)) {
+            choco install 7zip -y
+          }
+
+      - name: Build CUDA package
+        shell: pwsh
+        run: python -m PyInstaller --noconfirm "VRC auto fish-CUDA.spec"
+
+      - name: Archive build output as 7z
+        shell: pwsh
+        run: |
+          $assetName = "${{ github.event.inputs.asset_name }}"
+          if ([string]::IsNullOrWhiteSpace($assetName)) {
+            $assetName = "AutoFish.7z"
+          }
+          $outputDir = "dist/VRC auto fish-CUDA"
+          if (-not (Test-Path $outputDir)) {
+            throw "Build output folder not found: $outputDir"
+          }
+          if (Test-Path $assetName) {
+            Remove-Item $assetName -Force
+          }
+          7z a -t7z $assetName ".\\$outputDir\\*"
+
+      - name: Create release if missing
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tagName = "${{ github.event.inputs.tag_name }}"
+          gh release view $tagName *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tagName --title $tagName --notes ""
+          }
+
+      - name: Upload 7z asset to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tagName = "${{ github.event.inputs.tag_name }}"
+          $assetName = "${{ github.event.inputs.asset_name }}"
+          if ([string]::IsNullOrWhiteSpace($assetName)) {
+            $assetName = "AutoFish.7z"
+          }
+          gh release upload $tagName $assetName --clobber
