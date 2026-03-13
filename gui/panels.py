@@ -119,7 +119,6 @@ def build_yolo_panel(app, parent, pad):
     frm_yolo = ttk.LabelFrame(parent, text=app.tr("yolo.frame"))
     frm_yolo.pack(fill="x", **pad)
 
-    config.USE_YOLO = True
     ttk.Label(frm_yolo, text=app.tr("yolo.enabled")).pack(side="left", padx=4)
     app.var_yolo_collect = tk.BooleanVar(value=config.YOLO_COLLECT)
     ttk.Checkbutton(

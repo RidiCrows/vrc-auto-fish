@@ -4,10 +4,7 @@
 支持多颜色鱼、bar、track、progress，并兼容旧 `fish` 单类标注。
 """
 
-import argparse
 import os
-import random
-import shutil
 import sys
 
 import cv2
@@ -24,6 +21,14 @@ from fish_trainer.classes import (
 )
 from fish_trainer.console import safe_print
 from fish_trainer.paths import TRAIN_IMG, TRAIN_LBL, UNLABELED, VAL_IMG, VAL_LBL, ensure_dataset_dirs
+from trainer_common.labeling import (
+    build_label_parser,
+    list_relabel_entries,
+    list_unlabeled_entries,
+    load_existing_labels,
+    save_new_labeled_entry,
+    write_yolo_labels,
+)
 
 drawing = False
 ix = iy = 0
@@ -123,36 +128,6 @@ def mouse_cb(event, x, y, flags, param):
             cv2.imshow("Fish Trainer Label Tool", img_display)
 
 
-def load_existing_labels(lbl_path, img_w, img_h):
-    loaded = []
-    if not os.path.exists(lbl_path):
-        return loaded
-    with open(lbl_path, "r", encoding="utf-8") as f:
-        for line in f:
-            parts = line.strip().split()
-            if len(parts) < 5:
-                continue
-            cls = int(parts[0])
-            cx, cy, bw, bh = map(float, parts[1:5])
-            x1 = int((cx - bw / 2) * img_w)
-            y1 = int((cy - bh / 2) * img_h)
-            x2 = int((cx + bw / 2) * img_w)
-            y2 = int((cy + bh / 2) * img_h)
-            loaded.append((cls, x1, y1, x2, y2))
-    return loaded
-
-
-def write_yolo_labels(lbl_path):
-    h, w = img_orig.shape[:2]
-    with open(lbl_path, "w", encoding="utf-8") as f:
-        for cls, x1, y1, x2, y2 in boxes:
-            cx = ((x1 + x2) / 2) / w
-            cy = ((y1 + y2) / 2) / h
-            bw = (x2 - x1) / w
-            bh = (y2 - y1) / h
-            f.write(f"{cls} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}\n")
-
-
 def label_loop(file_pairs, save_func, mode_name):
     global current_class, boxes, img_orig
 
@@ -161,7 +136,9 @@ def label_loop(file_pairs, save_func, mode_name):
     print_help()
 
     labeled = 0
-    for idx, (img_path, lbl_path) in enumerate(file_pairs):
+    for idx, entry in enumerate(file_pairs):
+        img_path = entry["img_path"]
+        lbl_path = entry["lbl_path"]
         img_orig = cv2.imread(img_path)
         if img_orig is None:
             continue
@@ -210,7 +187,7 @@ def label_loop(file_pairs, save_func, mode_name):
                 if not boxes:
                     safe_print("    [跳过] 没有标注框")
                     break
-                save_func(img_path, lbl_path)
+                save_func(entry)
                 labeled += 1
                 safe_print(f"    [保存] {len(boxes)} 个框")
                 break
@@ -227,10 +204,7 @@ def label_loop(file_pairs, save_func, mode_name):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(description="多颜色鱼标注工具")
-    parser.add_argument("--split", type=float, default=0.2, help="验证集比例")
-    parser.add_argument("--relabel", action="store_true", help="重新标注已有 train/val 数据")
-    return parser
+    return build_label_parser("多颜色鱼标注工具")
 
 
 def main(argv=None):
@@ -239,45 +213,35 @@ def main(argv=None):
 
     ensure_dataset_dirs()
     if args.relabel:
-        pairs = []
-        for img_dir, lbl_dir in ((TRAIN_IMG, TRAIN_LBL), (VAL_IMG, VAL_LBL)):
-            if not os.path.isdir(img_dir):
-                continue
-            for name in sorted(os.listdir(img_dir)):
-                if name.lower().endswith((".png", ".jpg", ".jpeg", ".bmp")):
-                    pairs.append((
-                        os.path.join(img_dir, name),
-                        os.path.join(lbl_dir, os.path.splitext(name)[0] + ".txt"),
-                    ))
+        pairs = list_relabel_entries(TRAIN_IMG, TRAIN_LBL, VAL_IMG, VAL_LBL)
         if not pairs:
             safe_print("[提示] train/ val/ 中没有可补标的图片")
             return
 
-        def save_inplace(_img_path, lbl_path):
-            write_yolo_labels(lbl_path)
+        def save_inplace(entry):
+            write_yolo_labels(entry["lbl_path"], img_orig.shape, boxes)
 
         label_loop(pairs, save_inplace, mode_name="补标")
         return
 
-    files = sorted(
-        f for f in os.listdir(UNLABELED)
-        if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp"))
-    )
-    if not files:
+    file_pairs = list_unlabeled_entries(UNLABELED)
+    if not file_pairs:
         safe_print(f"[提示] {UNLABELED} 中没有未标注图片")
         return
 
-    def save_new(img_path, _unused_lbl):
-        is_val = random.random() < args.split
-        dst_img_dir = VAL_IMG if is_val else TRAIN_IMG
-        dst_lbl_dir = VAL_LBL if is_val else TRAIN_LBL
-        name = os.path.splitext(os.path.basename(img_path))[0]
-        lbl_path = os.path.join(dst_lbl_dir, name + ".txt")
-        write_yolo_labels(lbl_path)
-        shutil.move(img_path, os.path.join(dst_img_dir, os.path.basename(img_path)))
-        safe_print(f"      -> {'val' if is_val else 'train'}/")
+    def save_new(entry):
+        save_new_labeled_entry(
+            entry,
+            img_orig.shape,
+            boxes,
+            args.split,
+            TRAIN_IMG,
+            TRAIN_LBL,
+            VAL_IMG,
+            VAL_LBL,
+            safe_print,
+        )
 
-    file_pairs = [(os.path.join(UNLABELED, name), None) for name in files]
     label_loop(file_pairs, save_new, mode_name="标注")
 
 

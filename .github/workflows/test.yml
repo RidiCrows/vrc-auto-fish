@@ -1,5 +1,8 @@
 name: Windows Tests
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   push:
     branches:
@@ -12,10 +15,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
 
@@ -31,9 +34,17 @@ jobs:
         shell: pwsh
         run: pip install -r requirements.txt
 
+      - name: Install ruff
+        shell: pwsh
+        run: pip install ruff
+
       - name: Import dependency sanity check
         shell: pwsh
         run: python -c "import cv2, keyboard, torch, ultralytics"
+
+      - name: Ruff syntax guardrails
+        shell: pwsh
+        run: ruff check . --config ruff.toml
 
       - name: Run stable unit tests
         shell: pwsh
@@ -44,4 +55,7 @@ jobs:
           tests.test_settings_store
           tests.test_runtime_controller
           tests.test_minigame_detection
+          tests.test_minigame_session
+          tests.test_labeling_common
+          tests.test_trainer_common
           -v

@@ -81,7 +81,7 @@ class DetectionServiceTests(unittest.TestCase):
             yolo_roi=None,
             skip_success=False,
         )
-        self.assertEqual(len(result), 7)
+        self.assertEqual(len(result), 8)
 
     def test_detect_worker_loop_pushes_latest_result(self):
         service = self.make_service(FakeYolo())

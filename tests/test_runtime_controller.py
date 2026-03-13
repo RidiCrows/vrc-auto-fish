@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import config
 from gui.runtime_controller import AppRuntimeController
+from utils.i18n import t
 
 
 class FakeButton:
@@ -84,6 +85,7 @@ class RuntimeControllerTests(unittest.TestCase):
             btn_clear_roi=FakeButton(),
             _apply_params=lambda: None,
             _log_msg=logs.append,
+            _log_t=lambda key, **kwargs: logs.append(t(key, **kwargs)),
         )
         return app, logs
 

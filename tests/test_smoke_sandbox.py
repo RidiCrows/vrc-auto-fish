@@ -124,9 +124,11 @@ def make_sandbox_bot():
     )
     bot._maybe_activate_minigame = lambda fish, bar, progress, runtime, ctx: "ok"
     bot._postprocess_minigame_detection = (
-        lambda screen, screen_raw, fish, bar, mk, bs, yp, runtime, ctx: (fish, bar, yp)
+        lambda screen, screen_raw, fish, bar, mk, bs, yp, prog_hook, runtime, ctx: (fish, bar, yp)
     )
-    bot._compute_minigame_progress = lambda screen, fish, bar, yp, runtime, ctx: 0.6
+    bot._compute_minigame_progress = (
+        lambda screen, screen_raw, fish, bar, yp, prog_hook, runtime, ctx: 0.6
+    )
     bot._evaluate_minigame_end_state = lambda screen, fish, bar, runtime, rescue: "ok"
     bot._sync_pipeline_params = lambda runtime, ctx, pipe: None
     bot._log_minigame_frame = lambda fish, bar, green, runtime, skip: None

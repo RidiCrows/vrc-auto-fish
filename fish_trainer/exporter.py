@@ -9,6 +9,7 @@ import time
 import zipfile
 
 from fish_trainer.paths import TRAIN_IMG, TRAIN_LBL, VAL_IMG, VAL_LBL, ensure_dataset_dirs
+from trainer_common.dataset import count_images, count_labels
 
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp")
@@ -61,29 +62,14 @@ def get_dataset_stats():
         "unlabeled_images": 0,
     }
 
-    if os.path.isdir(TRAIN_IMG):
-        stats["train_images"] = sum(
-            1 for name in os.listdir(TRAIN_IMG) if name.lower().endswith(IMAGE_EXTS)
-        )
-    if os.path.isdir(TRAIN_LBL):
-        stats["train_labels"] = sum(
-            1 for name in os.listdir(TRAIN_LBL) if name.lower().endswith(".txt")
-        )
-    if os.path.isdir(VAL_IMG):
-        stats["val_images"] = sum(
-            1 for name in os.listdir(VAL_IMG) if name.lower().endswith(IMAGE_EXTS)
-        )
-    if os.path.isdir(VAL_LBL):
-        stats["val_labels"] = sum(
-            1 for name in os.listdir(VAL_LBL) if name.lower().endswith(".txt")
-        )
+    stats["train_images"] = count_images(TRAIN_IMG)
+    stats["train_labels"] = count_labels(TRAIN_LBL)
+    stats["val_images"] = count_images(VAL_IMG)
+    stats["val_labels"] = count_labels(VAL_LBL)
 
     stats["labeled_pairs"] = sum(1 for _ in iter_labeled_pairs())
 
     from fish_trainer.paths import UNLABELED
 
-    if os.path.isdir(UNLABELED):
-        stats["unlabeled_images"] = sum(
-            1 for name in os.listdir(UNLABELED) if name.lower().endswith(IMAGE_EXTS)
-        )
+    stats["unlabeled_images"] = count_images(UNLABELED)
     return stats

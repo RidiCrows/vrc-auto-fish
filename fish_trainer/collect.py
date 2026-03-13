@@ -1,100 +1,27 @@
 """
 多颜色鱼训练数据采集
 ====================
-独立于主程序 YOLO 目录，截图保存到 `fish_trainer/dataset/images/unlabeled/`。
+独立入口保留在 fish_trainer，但采集实现共享给 trainer_common。
 """
 
-import argparse
-import json
 import os
 import sys
-import time
-
-import cv2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import config
-from core.screen import ScreenCapture
-from core.window import WindowManager
 from fish_trainer.console import safe_print
-from fish_trainer.paths import UNLABELED, ensure_dataset_dirs
+from trainer_common.collect import run_collect
+from trainer_common.profiles import get_profile
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(description="多颜色鱼训练数据采集")
-    parser.add_argument("--fps", type=float, default=2.0, help="每秒截图数")
-    parser.add_argument("--roi", action="store_true", help="只截取已保存的 ROI")
-    parser.add_argument("--max", type=int, default=0, help="最大截图数量，0 表示无限")
-    return parser
+    from trainer_common.collect import build_parser
 
-
-def load_saved_roi():
-    try:
-        with open(config.SETTINGS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        return None
-
-    if isinstance(data, dict):
-        if isinstance(data.get("current"), dict):
-            return data["current"].get("DETECT_ROI")
-        return data.get("DETECT_ROI")
-    return None
+    return build_parser(get_profile("multicolor"))
 
 
 def main(argv=None):
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
-    ensure_dataset_dirs()
-
-    window = WindowManager(config.WINDOW_TITLE)
-    screen = ScreenCapture()
-    if not window.find():
-        safe_print("[错误] 未找到 VRChat 窗口，请确保游戏正在运行")
-        return
-
-    roi = load_saved_roi() if args.roi else None
-    interval = 1.0 / max(args.fps, 0.1)
-    count = 0
-
-    safe_print(f"[OK] 已连接: {window.title} (HWND={window.hwnd})")
-    safe_print(f"[保存] {UNLABELED}")
-    safe_print(f"[设置] 截图间隔: {interval:.2f}s | ROI: {'是' if roi else '否'}")
-    if roi:
-        safe_print(f"[ROI] X={roi[0]} Y={roi[1]} {roi[2]}x{roi[3]}")
-
-    try:
-        while True:
-            if not window.is_valid() and not window.find():
-                safe_print("[等待] VRChat 窗口未找到，5 秒后重试...")
-                time.sleep(5)
-                continue
-
-            img, _ = screen.grab_window(window)
-            if img is None:
-                time.sleep(0.5)
-                continue
-
-            if roi:
-                rx, ry, rw, rh = roi
-                img = img[ry:ry + rh, rx:rx + rw]
-
-            ts = time.strftime("%Y%m%d_%H%M%S")
-            ms = int((time.time() % 1) * 1000)
-            name = f"{ts}_{ms:03d}.png"
-            cv2.imwrite(os.path.join(UNLABELED, name), img)
-            count += 1
-            h, w = img.shape[:2]
-            safe_print(f"  [{count}] {name} ({w}x{h})", end="\r")
-
-            if args.max > 0 and count >= args.max:
-                safe_print(f"\n[完成] 已采集 {count} 张截图")
-                break
-            time.sleep(interval)
-    except KeyboardInterrupt:
-        safe_print(f"\n[停止] 共采集 {count} 张截图 -> {UNLABELED}")
+    run_collect(get_profile("multicolor"), safe_print, argv=argv)
 
 
 if __name__ == "__main__":

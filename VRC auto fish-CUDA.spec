@@ -1,7 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('img', 'img'), ('yolo/runs/fish_detect/weights/best.pt', 'yolo/runs/fish_detect/weights'), ('yolo/dataset/data.yaml', 'yolo/dataset')]
+datas = [
+    ('img', 'img'),
+    ('utils/i18n.json', 'utils'),
+    ('yolo/runs/fish_detect/weights/best.pt', 'yolo/runs/fish_detect/weights'),
+    ('yolo/dataset/data.yaml', 'yolo/dataset'),
+]
+if os.path.exists('imitation/policy.pt'):
+    datas.append(('imitation/policy.pt', 'imitation'))
 binaries = []
 hiddenimports = ['ultralytics', 'cv2', 'keyboard', 'mss', 'PIL', 'psutil', 'win32gui', 'win32con', 'pythonosc']
 tmp_ret = collect_all('ultralytics')

@@ -14,6 +14,7 @@ import cv2
 import config
 from utils.i18n import fish_name, t
 from utils.logger import log
+from yolo.paths import TRAIN_IMG as YOLO_TRAIN_IMG, UNLABELED as YOLO_UNLABELED
 
 
 class AppRuntimeController:
@@ -206,10 +207,8 @@ class AppRuntimeController:
     def update_yolo_status(self):
         """更新 YOLO 状态显示。"""
         model_ok = os.path.exists(config.YOLO_MODEL)
-        unlabeled = os.path.join(
-            config.BASE_DIR, "yolo", "dataset", "images", "unlabeled")
-        train = os.path.join(
-            config.BASE_DIR, "yolo", "dataset", "images", "train")
+        unlabeled = YOLO_UNLABELED
+        train = YOLO_TRAIN_IMG
         n_unlabeled = len([
             f for f in os.listdir(unlabeled)
             if f.endswith((".png", ".jpg"))
@@ -249,10 +248,9 @@ class AppRuntimeController:
             cv2.destroyAllWindows()
             x, y, w_r, h_r = [int(v) for v in roi]
             if w_r > 10 and h_r > 10:
-                config.DETECT_ROI = [x, y, w_r, h_r]
-                self.app._save_settings()
-                self.app.root.after(0, lambda: self.app.var_roi.set(f"X={x} Y={y} {w_r}x{h_r}"))
-                self.app.root.after(0, lambda: self.app.lbl_roi.config(foreground="green"))
+                roi_value = [x, y, w_r, h_r]
+                self.app.root.after(0, lambda: self.app.settings_store.apply_detect_roi(roi_value))
+                self.app.root.after(0, self.app._save_settings)
                 self.app._log_t("runtime.roiSet", x=x, y=y, w=w_r, h=h_r)
             else:
                 self.app._log_t("runtime.roiCancelled")
@@ -260,10 +258,8 @@ class AppRuntimeController:
         threading.Thread(target=select_worker, args=(img,), daemon=True, name="ROISelect").start()
 
     def on_clear_roi(self):
-        config.DETECT_ROI = None
+        self.app.settings_store.apply_detect_roi(None)
         self.app._save_settings()
-        self.app.var_roi.set(self.tr("toggle.roiUnset"))
-        self.app.lbl_roi.config(foreground="gray")
         self.app._log_t("runtime.roiCleared")
 
     def poll(self):

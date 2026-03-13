@@ -27,6 +27,7 @@ from core.minigame_detection import MinigameDetectionService
 from core.minigame_reel_exit import ReelExitHandler
 from core.minigame_rescue import RescueService
 from core.minigame_runner import MinigameRunner
+from core.minigame_session import MinigameSession
 from core.minigame_runtime import DetectionContext, MinigameRuntime, PipelineContext
 from core.pd_controller import PDController
 from utils.i18n import fish_name, t
@@ -119,8 +120,17 @@ class FishingBot:
         self._active_control_backend = None
         self._ensure_minigame_services()
 
+    def _get_minigame_session(self) -> MinigameSession:
+        """惰性获取小游戏会话对象，兼容测试里的 __new__ 假对象。"""
+        session = getattr(self, "minigame_session", None)
+        if session is None:
+            session = MinigameSession(self)
+            self.minigame_session = session
+        return session
+
     def _ensure_minigame_services(self):
         """惰性初始化小游戏编排相关服务，兼容测试里的 __new__ 假对象。"""
+        self._get_minigame_session()
         if not hasattr(self, "control_executor") or self.control_executor is None:
             self.control_executor = ControlExecutor(self.input)
         if not hasattr(self, "minigame_rescue") or self.minigame_rescue is None:
@@ -602,281 +612,57 @@ class FishingBot:
 
     def _build_minigame_runtime(self, entered_minigame_early: bool) -> MinigameRuntime:
         """初始化一局小游戏运行时状态。"""
-        return MinigameRuntime(game_active=entered_minigame_early)
+        return self._get_minigame_session().build_runtime(entered_minigame_early)
 
     def _build_detection_context(self, use_yolo: bool, skip_success_check: bool):
         """初始化小游戏检测上下文。"""
-        return DetectionContext(
-            use_yolo=use_yolo,
-            skip_success_check=skip_success_check,
-            bar_x_half=config.REGION_X,
-            fish_x_half=max(config.REGION_X * 2, 80),
+        return self._get_minigame_session().build_detection_context(
+            use_yolo,
+            skip_success_check,
         )
 
     def _initialize_minigame_context(self, ctx: DetectionContext):
         """初始化搜索区域、截图信息与首帧调试输出。"""
-        self.pd.reset()
-        self._bar_smooth_cy = None
-        self._bar_locked_cx = None
-        self._progress_debug_saved = False
-
-        screen_orig = self._grab()
-        self.screen.save_debug(screen_orig, "minigame_start")
-        h_orig, w_orig = screen_orig.shape[:2]
-        log.info_t("bot.log.captureSize", width=w_orig, height=h_orig)
-        self._show_debug_overlay(screen_orig, status_text=t("bot.log.minigameInit"))
-
-        if self._need_rotation:
-            log.info_t(
-                "bot.log.rotationComp",
-                angle=self._track_angle,
-                rotate=-self._track_angle,
-            )
-            screen = self._rotate_for_detection(screen_orig)
-        else:
-            screen = screen_orig
-
-        ctx.height, ctx.width = screen.shape[:2]
-        if ctx.use_yolo:
-            ctx.search_region = None
-            ctx.bar_search_region = None
-            ctx.regions_locked = True
-            if config.DETECT_ROI:
-                log.info_t(
-                    "bot.log.useManualRoi",
-                    x=config.DETECT_ROI[0],
-                    y=config.DETECT_ROI[1],
-                    w=config.DETECT_ROI[2],
-                    h=config.DETECT_ROI[3],
-                )
-            elif self._auto_roi:
-                log.info_t(
-                    "bot.log.useAutoRoi",
-                    x=self._auto_roi[0],
-                    y=self._auto_roi[1],
-                    w=self._auto_roi[2],
-                    h=self._auto_roi[3],
-                )
-            else:
-                log.info_t("bot.log.useFullScreenDetect")
-        else:
-            ctx.search_region, track_cx, ctx.bar_search_region = self._init_search_region(screen)
-            ctx.regions_locked = False
-            if track_cx is not None:
-                self._bar_locked_cx = track_cx
-                log.info_t("bot.log.preLockTrackX", x=track_cx)
-            if ctx.search_region:
-                srx, sry, srw, srh = ctx.search_region
-                log.info_t(
-                    "bot.log.initialFishSearch",
-                    x1=srx,
-                    x2=srx + srw,
-                    y1=sry,
-                    y2=sry + srh,
-                )
-            if ctx.bar_search_region:
-                bsx, bsy, bsw, bsh = ctx.bar_search_region
-                log.info_t(
-                    "bot.log.initialBarSearch",
-                    x1=bsx,
-                    x2=bsx + bsw,
-                    y1=bsy,
-                    y2=bsy + bsh,
-                )
-
-        return screen_orig, screen
+        return self._get_minigame_session().initialize_context(ctx)
 
     def _start_pipeline(self, ctx: DetectionContext) -> PipelineContext:
         """根据当前模式启动同步/异步检测流水线。"""
-        sync_pd_mode = (
-            getattr(config, "SYNC_PD_MODE", True)
-            and not config.IL_RECORD
-            and not config.IL_USE_MODEL
-        )
-        pipe = PipelineContext(sync_pd_mode=sync_pd_mode)
-        if pipe.sync_pd_mode:
-            log.info_t("bot.log.legacyMode")
-            return pipe
-
-        pipe.frame_q = queue.Queue(maxsize=1)
-        pipe.result_q = queue.Queue(maxsize=1)
-        pipe.stop_evt = threading.Event()
-        pipe.shared_params = {
-            "search_region": ctx.search_region,
-            "bar_search_region": ctx.bar_search_region,
-            "locked_fish_key": ctx.locked_fish_key,
-            "locked_fish_scales": ctx.locked_fish_scales,
-            "locked_bar_scales": ctx.locked_bar_scales,
-            "frame": 0,
-            "yolo_roi": config.DETECT_ROI or self._auto_roi,
-            "skip_success": ctx.skip_success_check,
-        }
-        pipe.params_lock = threading.Lock()
-        pipe.capture_thread = threading.Thread(
-            target=self._capture_worker_fn,
-            args=(pipe.frame_q, pipe.stop_evt),
-            daemon=True, name="FishCapture"
-        )
-        pipe.detect_thread = threading.Thread(
-            target=self._detect_worker_fn,
-            args=(
-                pipe.frame_q, pipe.result_q, pipe.stop_evt,
-                pipe.shared_params, pipe.params_lock, ctx.use_yolo
-            ),
-            daemon=True, name="FishDetect"
-        )
-        pipe.capture_thread.start()
-        pipe.detect_thread.start()
-        log.info_t("bot.log.pipelineStarted")
-        return pipe
+        return self._get_minigame_session().start_pipeline(ctx)
 
     def _stop_pipeline(self, pipe: PipelineContext):
         """停止异步检测流水线。"""
-        if pipe.sync_pd_mode:
-            return
-        pipe.stop_evt.set()
-        pipe.capture_thread.join(timeout=1.0)
-        pipe.detect_thread.join(timeout=1.0)
-        log.info_t("bot.log.pipelineStopped")
+        self._get_minigame_session().stop_pipeline(pipe)
 
     def _get_next_detection_result(self, runtime: MinigameRuntime,
                                    ctx: DetectionContext,
                                    pipe: PipelineContext):
         """获取下一帧检测结果，兼容同步与异步模式。"""
-        if pipe.sync_pd_mode:
-            next_frame = runtime.frame + 1
-            screen_raw = self._grab()
-            screen = (self._rotate_for_detection(screen_raw)
-                      if self._need_rotation else screen_raw)
-            self._tick_fps()
-            (pipe_fish, pipe_bar, pipe_progress, pipe_hook,
-             pipe_mk, pipe_bs, pipe_track,
-             ctx.sync_track_cache) = self._detect_frame_once(
-                screen, ctx.use_yolo,
-                ctx.search_region, ctx.bar_search_region,
-                ctx.locked_fish_key, ctx.locked_fish_scales,
-                ctx.locked_bar_scales, next_frame,
-                config.DETECT_ROI or self._auto_roi,
-                ctx.skip_success_check,
-                track_cache=ctx.sync_track_cache,
-            )
-            runtime.frame = next_frame
-            return (
-                screen_raw, screen, pipe_fish, pipe_bar,
-                pipe_progress, pipe_hook, pipe_mk, pipe_bs, pipe_track
-            )
-
-        try:
-            pipe_data = pipe.result_q.get(timeout=0.5)
-        except queue.Empty:
-            return None
-        while True:
-            try:
-                pipe_data = pipe.result_q.get_nowait()
-            except queue.Empty:
-                break
-        runtime.frame += 1
-        self._tick_fps()
-        return pipe_data
+        return self._get_minigame_session().get_next_detection_result(runtime, ctx, pipe)
 
     def _sync_pipeline_params(self, runtime: MinigameRuntime,
                               ctx: DetectionContext,
                               pipe: PipelineContext):
         """同步检测参数给异步检测线程。"""
-        if pipe.sync_pd_mode:
-            return
-        with pipe.params_lock:
-            pipe.shared_params["search_region"] = ctx.search_region
-            pipe.shared_params["bar_search_region"] = ctx.bar_search_region
-            pipe.shared_params["locked_fish_key"] = ctx.locked_fish_key
-            pipe.shared_params["locked_fish_scales"] = ctx.locked_fish_scales
-            pipe.shared_params["locked_bar_scales"] = ctx.locked_bar_scales
-            pipe.shared_params["frame"] = runtime.frame
+        self._get_minigame_session().sync_pipeline_params(runtime, ctx, pipe)
 
     def _get_fish_display(self):
-        return {
-            key: (fish_name(key), color)
-            for key, color in self.FISH_COLORS.items()
-        }
+        return self._get_minigame_session().get_fish_display()
 
     def _reset_fish_name_state(self, runtime: MinigameRuntime):
         """清理鱼类别稳定器与白名单确认状态。"""
-        runtime.fish_name_pending = ""
-        runtime.fish_name_pending_frames = 0
-        runtime.blocked_fish_pending = ""
-        runtime.blocked_fish_pending_frames = 0
+        self._get_minigame_session().reset_fish_name_state(runtime)
 
     def _stabilize_fish_name(self, detected_name: str,
                              runtime: MinigameRuntime) -> str:
-        """
-        对 YOLO 鱼类别做短时稳定，避免同一条鱼在相邻帧里频繁切色。
-        返回当前应当生效的稳定类别；空字符串表示暂不接受切换。
-        """
-        detected_name = detected_name or ""
-        if not detected_name:
-            runtime.fish_name_pending = ""
-            runtime.fish_name_pending_frames = 0
-            return self._current_fish_name or ""
-
-        current_name = self._current_fish_name or ""
-        if detected_name == current_name:
-            runtime.fish_name_pending = ""
-            runtime.fish_name_pending_frames = 0
-            return detected_name
-
-        if runtime.fish_name_pending != detected_name:
-            runtime.fish_name_pending = detected_name
-            runtime.fish_name_pending_frames = 1
-        else:
-            runtime.fish_name_pending_frames += 1
-
-        stable_frames = max(1, getattr(config, "YOLO_FISH_STABLE_FRAMES", 3))
-        if runtime.fish_name_pending_frames < stable_frames:
-            return current_name
-
-        prev_name = current_name
-        runtime.fish_name_pending = ""
-        runtime.fish_name_pending_frames = 0
-        if prev_name and prev_name != detected_name:
-            display_map = self._get_fish_display()
-            prev_cn = display_map.get(prev_name, (prev_name,))[0]
-            new_cn = display_map.get(detected_name, (detected_name,))[0]
-            log.info_t(
-                "bot.log.fishSwitch",
-                old=prev_cn,
-                new=new_cn,
-                frames=stable_frames,
-            )
-        return detected_name
+        return self._get_minigame_session().stabilize_fish_name(detected_name, runtime)
 
     def _should_skip_fish_by_whitelist(self, fish_name: str,
                                        runtime: MinigameRuntime) -> bool:
         """非白名单鱼需要连续命中多帧才真正触发放弃。"""
-        if not fish_name:
-            runtime.blocked_fish_pending = ""
-            runtime.blocked_fish_pending_frames = 0
-            return False
-
-        if config.FISH_WHITELIST.get(fish_name, True):
-            runtime.blocked_fish_pending = ""
-            runtime.blocked_fish_pending_frames = 0
-            return False
-
-        if runtime.blocked_fish_pending != fish_name:
-            runtime.blocked_fish_pending = fish_name
-            runtime.blocked_fish_pending_frames = 1
-        else:
-            runtime.blocked_fish_pending_frames += 1
-
-        confirm_frames = max(
-            1, getattr(config, "YOLO_WHITELIST_CONFIRM_FRAMES", 6)
+        return self._get_minigame_session().should_skip_fish_by_whitelist(
+            fish_name,
+            runtime,
         )
-        if runtime.blocked_fish_pending_frames < confirm_frames:
-            return False
-
-        runtime.blocked_fish_pending = ""
-        runtime.blocked_fish_pending_frames = 0
-        return True
 
     def _postprocess_minigame_detection(self, screen, screen_raw,
                                         fish, bar, matched_key, bar_scale,
@@ -884,321 +670,46 @@ class FishingBot:
                                         runtime: MinigameRuntime,
                                         ctx: DetectionContext):
         """处理一帧检测结果的模板锁定、轨道约束与调试显示。"""
-        fish_detect_name = ""
-
-        if ctx.use_yolo:
-            if fish is not None:
-                # 多分类 YOLO 模型直接输出 fish_name，只有旧模型才回退颜色识别。
-                fish_detect_name = matched_key or ""
-                if not fish_detect_name:
-                    save_debug = not runtime.fish_id_saved
-                    color_key = self.detector.identify_fish_type(
-                        screen, fish, debug_save=save_debug
-                    )
-                    if save_debug:
-                        runtime.fish_id_saved = True
-                    matched_key = color_key
-                    fish_detect_name = color_key
-                fish_detect_name = self._stabilize_fish_name(
-                    fish_detect_name, runtime
-                )
-
-            if config.YOLO_COLLECT and runtime.frame % 10 == 0:
-                collect_dir = os.path.join(
-                    config.BASE_DIR, "yolo", "dataset", "images", "unlabeled"
-                )
-                os.makedirs(collect_dir, exist_ok=True)
-                ts = time.strftime("%Y%m%d_%H%M%S")
-                ms = int((time.time() % 1) * 1000)
-                cv2.imwrite(os.path.join(collect_dir, f"{ts}_{ms:03d}.png"), screen)
-        else:
-            if ctx.locked_fish_key:
-                if fish is not None:
-                    fish_detect_name = ctx.locked_fish_key
-                if (fish is None and runtime.fish_lost > 20
-                        and runtime.fish_lost % 20 == 0):
-                    ctx.locked_fish_key = None
-                    ctx.locked_fish_scales = None
-                    log.info_t("bot.log.unlockFishTemplate")
-            elif fish is not None:
-                fish_detect_name = matched_key or "?"
-                if matched_key and matched_key != "fish_white":
-                    ctx.locked_fish_key = matched_key
-                    scale = self.detector._last_best_scale
-                    ctx.locked_fish_scales = [
-                        round(scale * 0.85, 2), scale, round(scale * 1.15, 2)
-                    ]
-                    log.info_t(
-                        "bot.log.lockFishTemplate",
-                        name=ctx.locked_fish_key,
-                        scales=[f"{x:.2f}" for x in ctx.locked_fish_scales],
-                    )
-
-        if fish is not None:
-            self._current_fish_name = fish_detect_name
-        if not runtime.skip_fish and fish_detect_name:
-            wl_key = fish_detect_name
-            if self._should_skip_fish_by_whitelist(wl_key, runtime):
-                fname_cn = self._get_fish_display().get(wl_key, (wl_key,))[0]
-                confirm_frames = max(
-                    1, getattr(config, "YOLO_WHITELIST_CONFIRM_FRAMES", 6)
-                )
-                log.info_t(
-                    "bot.log.whitelistSkip",
-                    fish=fname_cn,
-                    frames=confirm_frames,
-                )
-                runtime.skip_fish = True
-
-        if not ctx.use_yolo and bar is not None and not ctx.locked_bar_scales:
-            ctx.locked_bar_scales = [
-                round(max(0.2, bar_scale * 0.85), 2),
-                bar_scale,
-                round(bar_scale * 1.15, 2),
-            ]
-            log.info_t(
-                "bot.log.lockBarTemplate",
-                scales=[f"{x:.2f}" for x in ctx.locked_bar_scales],
-            )
-
-        if bar is not None:
-            raw_bcx = bar[0] + bar[2] // 2
-            if self._bar_locked_cx is None:
-                self._bar_locked_cx = raw_bcx
-                log.info_t("bot.log.lockTrackXFromBar", x=raw_bcx)
-            elif abs(raw_bcx - self._bar_locked_cx) > ctx.bar_x_half:
-                bar = None
-
-            if bar is not None:
-                raw_bar_cy = bar[1] + bar[3] // 2
-                if self._bar_smooth_cy is None:
-                    self._bar_smooth_cy = float(raw_bar_cy)
-                else:
-                    max_jump = max(12.0, bar[3] * 0.60)
-                    delta = raw_bar_cy - self._bar_smooth_cy
-                    if delta > max_jump:
-                        raw_bar_cy = int(self._bar_smooth_cy + max_jump)
-                    elif delta < -max_jump:
-                        raw_bar_cy = int(self._bar_smooth_cy - max_jump)
-                    self._bar_smooth_cy = (
-                        0.45 * raw_bar_cy + 0.55 * self._bar_smooth_cy
-                    )
-                smooth_bar_cy = int(round(self._bar_smooth_cy))
-                bar = (
-                    self._bar_locked_cx - bar[2] // 2,
-                    smooth_bar_cy - bar[3] // 2,
-                    bar[2], bar[3], bar[4],
-                )
-            else:
-                self._bar_smooth_cy = None
-
-        if bar is not None and not ctx.regions_locked:
-            bar_cy = bar[1] + bar[3] // 2
-            tcx = self._bar_locked_cx or (bar[0] + bar[2] // 2)
-            y_top = max(0, bar_cy - config.REGION_UP)
-            y_bot = min(ctx.height, bar_cy + config.REGION_DOWN)
-            roi = config.DETECT_ROI
-            if roi:
-                y_top = max(y_top, roi[1])
-                y_bot = min(y_bot, roi[1] + roi[3])
-            rh = y_bot - y_top
-
-            fish_half = max(config.REGION_X * 2, 80)
-            fsx = max(0, tcx - fish_half)
-            fsw = min(fish_half * 2, ctx.width - fsx)
-            if roi:
-                fsx = max(fsx, roi[0])
-                fsw = min(fsw, roi[0] + roi[2] - fsx)
-            ctx.search_region = (fsx, y_top, fsw, rh)
-
-            bar_half = config.REGION_X
-            bsx = max(0, tcx - bar_half)
-            bsw = min(bar_half * 2, ctx.width - bsx)
-            if roi:
-                bsx = max(bsx, roi[0])
-                bsw = min(bsw, roi[0] + roi[2] - bsx)
-            ctx.bar_search_region = (bsx, y_top, bsw, rh)
-            ctx.regions_locked = True
-            log.info(
-                f"  ★ 搜索区域锁定(白条Y={bar_cy}): "
-                f"Y={y_top}~{y_bot} "
-                f"鱼X=±{fish_half} 条X=±{bar_half}"
-                f"{' (ROI裁剪)' if roi else ''}"
-            )
-
-        if fish is not None:
-            raw_fcx = fish[0] + fish[2] // 2
-            if (self._bar_locked_cx is not None
-                    and abs(raw_fcx - self._bar_locked_cx) > ctx.fish_x_half):
-                fish = None
-                self._current_fish_name = ""
-                self._reset_fish_name_state(runtime)
-            if fish is not None and self._bar_locked_cx is not None:
-                fish = (
-                    self._bar_locked_cx - fish[2] // 2,
-                    fish[1], fish[2], fish[3], fish[4],
-                )
-
-        if fish is not None and bar is not None:
-            fish_cy_check = fish[1] + fish[3] // 2
-            bar_cy_check = bar[1] + bar[3] // 2
-            dist_y = abs(fish_cy_check - bar_cy_check)
-            if dist_y > config.MAX_FISH_BAR_DIST:
-                if runtime.frame % 30 == 1:
-                    log.warning(
-                        f"[⚠ 误检] 鱼Y={fish_cy_check} 条Y={bar_cy_check} "
-                        f"距离={dist_y}px > {config.MAX_FISH_BAR_DIST}px"
-                    )
-                fish = None
-                bar = None
-
-        display_sr = ctx.search_region or self._auto_roi
-        if not self._need_rotation:
-            self._show_debug_overlay(
-                screen_raw, fish, bar, display_sr,
-                bar_search_region=ctx.bar_search_region,
-                progress=None if ctx.skip_success_check else yolo_progress,
-                prog_hook=prog_hook,
-                status_text=f"🐟 小游戏 F{runtime.frame:04d}"
-            )
-        else:
-            self._show_debug_overlay(
-                screen_raw,
-                search_region=display_sr,
-                bar_search_region=ctx.bar_search_region,
-                progress=None if ctx.skip_success_check else yolo_progress,
-                prog_hook=prog_hook,
-                status_text=(
-                    f"🐟 小游戏 F{runtime.frame:04d} "
-                    f"(旋转{self._track_angle:.0f}°补偿中)"
-                )
-            )
-
-        return fish, bar, yolo_progress
+        return self._get_minigame_session().postprocess_detection(
+            screen,
+            screen_raw,
+            fish,
+            bar,
+            matched_key,
+            bar_scale,
+            yolo_progress,
+            prog_hook,
+            runtime,
+            ctx,
+        )
 
     def _compute_minigame_progress(self, screen, screen_raw,
                                    fish, bar, yolo_progress, prog_hook,
                                    runtime: MinigameRuntime,
                                    ctx: DetectionContext) -> float:
         """统计当前进度条绿色占比。"""
-        green = 0.0
-        if ctx.skip_success_check or runtime.frame <= runtime.progress_skip_frames:
-            return green
-
-        if ctx.use_yolo and yolo_progress is not None:
-            px, py, pw, ph = yolo_progress[:4]
-            green, hook_box, hook_source = self.detector.estimate_progress_in_box(
-                screen, yolo_progress
-            )
-            if hook_box is not None:
-                prog_hook = hook_box
-                if runtime.frame % 10 == 0:
-                    hx, hy, hw, hh, hconf = hook_box
-                    log.info(
-                        f"[Hook] F{runtime.frame:04d} progress=({px},{py},{pw},{ph}) "
-                        f"{hook_source}=({hx},{hy},{hw},{hh}) conf={hconf:.2f} "
-                        f"ratio={green:.0%}"
-                    )
-            else:
-                pad_x = max(1, int(pw * 0.08))
-                pad_y = max(1, int(ph * 0.05))
-                sx = px + pad_x
-                sy = py + pad_y
-                sw = max(1, pw - pad_x * 2)
-                sh = max(1, ph - pad_y * 2)
-                green = self.detector.detect_green_ratio(screen, (sx, sy, sw, sh))
-                if not self._progress_debug_saved and green > 0:
-                    self._progress_debug_saved = True
-                    pad = 20
-                    dx = max(0, px - pad)
-                    dw = min(pw + pad * 2, ctx.width - dx)
-                    dbg = screen[py:py + ph, dx:dx + dw].copy()
-                    cv2.rectangle(
-                        dbg, (sx - dx, sy - py),
-                        (sx - dx + sw, sy - py + sh), (0, 255, 0), 1
-                    )
-                    info = f"green={green:.0%} roi={sw}x{sh}"
-                    cv2.putText(
-                        dbg, info, (2, 16),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1
-                    )
-                    debug_dir = os.path.join(config.BASE_DIR, "debug")
-                    os.makedirs(debug_dir, exist_ok=True)
-                    cv2.imwrite(os.path.join(debug_dir, "progress_strip.png"), dbg)
-
-            display_sr = ctx.search_region or self._auto_roi
-            self._show_debug_overlay(
-                screen_raw, fish, bar, display_sr,
-                bar_search_region=ctx.bar_search_region,
-                progress=yolo_progress,
-                prog_hook=prog_hook,
-                status_text=f"🐟 小游戏 F{runtime.frame:04d}"
-            )
-        else:
-            progress_sr = ctx.search_region
-            if bar is not None:
-                bcx = bar[0] + bar[2] // 2
-                bcy = bar[1] + bar[3] // 2
-                pr_half_x = max(config.REGION_X * 2, 80)
-                pr_x = max(0, bcx - pr_half_x)
-                pr_y = max(0, bcy - config.REGION_UP)
-                pr_w = min(pr_half_x * 2, ctx.width - pr_x)
-                pr_h = min(config.REGION_UP + config.REGION_DOWN, ctx.height - pr_y)
-                progress_sr = (pr_x, pr_y, pr_w, pr_h)
-                runtime.last_progress_sr = progress_sr
-            elif runtime.last_progress_sr is not None:
-                progress_sr = runtime.last_progress_sr
-            green = self._check_progress(screen, fish, progress_sr)
-
-        if (green > 0 and runtime.prev_green > 0.01
-                and (green - runtime.prev_green) > 0.30):
-            capped_green = min(green, runtime.prev_green + 0.12)
-            log.debug(
-                f"  进度跳变过大 {runtime.prev_green:.0%}→{green:.0%}，"
-                f"限幅到 {capped_green:.0%}"
-            )
-            green = capped_green
-
-        if green > 0:
-            runtime.prev_green = green
-        if green > runtime.last_green:
-            runtime.last_green = green
-        return green
+        return self._get_minigame_session().compute_progress(
+            screen,
+            screen_raw,
+            fish,
+            bar,
+            yolo_progress,
+            prog_hook,
+            runtime,
+            ctx,
+        )
 
     def _maybe_activate_minigame(self, fish, bar, yolo_progress,
                                  runtime: MinigameRuntime,
                                  ctx: DetectionContext):
         """检查是否正式进入小游戏控制阶段。"""
-        if runtime.game_active:
-            return "ok"
-
-        det_count = ((fish is not None)
-                     + (bar is not None)
-                     + (yolo_progress is not None))
-        if det_count >= 2:
-            runtime.game_active = True
-            runtime.had_good_detection = True
-            det_names = []
-            if fish is not None:
-                det_names.append("鱼")
-            if bar is not None:
-                det_names.append("条")
-            if yolo_progress is not None:
-                det_names.append("进度条")
-            log.info_t("bot.log.minigameConfirmed", names="+".join(det_names))
-            if not config.IL_RECORD:
-                press_t = getattr(config, "INITIAL_PRESS_TIME", 0.2)
-                self.input.mouse_down()
-                time.sleep(press_t)
-                self.input.mouse_up()
-            return "ok"
-
-        if time.time() - runtime.hook_time > ctx.hook_detect_timeout:
-            log.warning_t("bot.log.hookTimeout", seconds=ctx.hook_detect_timeout)
-            runtime.hook_timeout_retry = True
-            return "break"
-
-        return "continue"
+        return self._get_minigame_session().maybe_activate(
+            fish,
+            bar,
+            yolo_progress,
+            runtime,
+            ctx,
+        )
 
     def _evaluate_minigame_end_state(self, screen, fish, bar,
                                      runtime: MinigameRuntime,
@@ -1215,29 +726,24 @@ class FishingBot:
                               runtime: MinigameRuntime,
                               ctx: DetectionContext) -> bool:
         """执行当前帧控制逻辑。"""
-        backend = getattr(self, "_active_control_backend", None) or self._build_control_backend()
-        return backend.control(fish, bar, yolo_progress, runtime, ctx)
+        return self._get_minigame_session().run_control(
+            fish,
+            bar,
+            yolo_progress,
+            runtime,
+            ctx,
+        )
 
     def _log_minigame_frame(self, fish, bar, green,
                             runtime: MinigameRuntime,
                             skip_success_check: bool):
         """输出小游戏周期日志。"""
-        if runtime.frame == 50:
-            self.detector.debug_report = self.debug_mode
-        if runtime.frame % 30 != 0:
-            return
-        fname = self._current_fish_name.replace("fish_", "") if self._current_fish_name else ""
-        fi = f"鱼[{fname}]Y={fish[1]+fish[3]//2}" if fish else "鱼=无"
-        bi = f"条Y={bar[1]+bar[3]//2}" if bar else "条=无"
-        vel = f"v={self.pd.bar_velocity:+.0f}"
-        if skip_success_check:
-            log.info(
-                f"[F{runtime.frame:04d}] {fi} | {bi} | {vel} | 按住:{runtime.hold_count}"
-            )
-            return
-        log.info(
-            f"[F{runtime.frame:04d}] {fi} | {bi} | {vel} | "
-            f"按住:{runtime.hold_count} | 进度:{green:.0%}"
+        self._get_minigame_session().log_frame(
+            fish,
+            bar,
+            green,
+            runtime,
+            skip_success_check,
         )
 
     def _try_rescue_pd(self, reason: str, runtime: MinigameRuntime,
@@ -1479,7 +985,6 @@ class FishingBot:
 
         if not self._progress_debug_saved and ratio > 0:
             self._progress_debug_saved = True
-            import os
             pad = 30
             dx = max(0, sx - pad)
             dw = min(sw + pad * 2, screen.shape[1] - dx)

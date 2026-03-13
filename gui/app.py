@@ -581,7 +581,7 @@ class FishingApp:
                             log_on: str, log_off: str,
                             after_change=None):
         """统一处理布尔设置的写入、保存与日志。"""
-        setattr(config, config_attr, bool(value))
+        self.settings_store.apply_bool_setting(config_attr, value)
         self._save_settings()
         self._log_msg(log_on if value else log_off)
         if after_change is not None:
@@ -590,7 +590,7 @@ class FishingApp:
     def _apply_choice_setting(self, config_attr: str, value,
                               log_message: str):
         """统一处理枚举/字符串设置。"""
-        setattr(config, config_attr, value)
+        self.settings_store.apply_choice_setting(config_attr, value)
         self._save_settings()
         self._log_msg(log_message)
 
@@ -790,7 +790,7 @@ class FishingApp:
         try:
             val = float(self.var_shake_time.get().strip())
             if abs(val - config.SHAKE_HEAD_TIME) > 1e-6:
-                config.SHAKE_HEAD_TIME = val
+                self.settings_store.apply_choice_setting("SHAKE_HEAD_TIME", val)
                 changed.append(f"摇头时长={val:.3f}s")
         except ValueError:
             pass

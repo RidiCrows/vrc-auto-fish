@@ -1,5 +1,8 @@
 name: Release CUDA Build
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   workflow_dispatch:
     inputs:
@@ -22,10 +25,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
 
@@ -33,9 +36,32 @@ jobs:
         shell: pwsh
         run: python -m pip install --upgrade pip
 
-      - name: Install CUDA PyTorch
+      - name: Install PyTorch with fallback
         shell: pwsh
-        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+        run: |
+          $ErrorActionPreference = "Stop"
+          $channels = @(
+            @{ Label = "cu128"; Url = "https://download.pytorch.org/whl/cu128" },
+            @{ Label = "cu118"; Url = "https://download.pytorch.org/whl/cu118" },
+            @{ Label = "cpu"; Url = "https://download.pytorch.org/whl/cpu" }
+          )
+          $installed = $false
+          foreach ($channel in $channels) {
+            Write-Host "Trying PyTorch channel: $($channel.Label)"
+            try {
+              python -m pip install torch torchvision --index-url $channel.Url
+              if ($LASTEXITCODE -eq 0) {
+                "PYTORCH_CHANNEL=$($channel.Label)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                $installed = $true
+                break
+              }
+            } catch {
+              Write-Warning "PyTorch install failed on channel $($channel.Label): $_"
+            }
+          }
+          if (-not $installed) {
+            throw "Failed to install PyTorch from cu128, cu118, and cpu channels."
+          }
 
       - name: Install project requirements
         shell: pwsh
@@ -44,6 +70,12 @@ jobs:
       - name: Install build tools
         shell: pwsh
         run: pip install pyinstaller
+
+      - name: Print build environment diagnostics
+        shell: pwsh
+        run: |
+          Write-Host "Selected PyTorch channel: $env:PYTORCH_CHANNEL"
+          python -c "import cv2, torch, ultralytics; print(f'torch={torch.__version__} cuda={torch.cuda.is_available()}'); print(f'cv2={cv2.__version__}'); print(f'ultralytics={ultralytics.__version__}')"
 
       - name: Ensure 7-Zip is available
         shell: pwsh
@@ -55,6 +87,21 @@ jobs:
       - name: Build CUDA package
         shell: pwsh
         run: python -m PyInstaller --noconfirm "VRC auto fish-CUDA.spec"
+
+      - name: Validate build output
+        shell: pwsh
+        run: |
+          $outputDir = "dist/VRC auto fish-CUDA"
+          $exePath = Join-Path $outputDir "VRC auto fish-CUDA.exe"
+          if (-not (Test-Path $outputDir)) {
+            throw "Build output folder not found: $outputDir"
+          }
+          if (-not (Test-Path $exePath)) {
+            throw "Built executable not found: $exePath"
+          }
+          Write-Host "Build output folder: $outputDir"
+          Write-Host "Built executable: $exePath"
+          Get-ChildItem $outputDir | Select-Object Name, Length
 
       - name: Archive build output as 7z
         shell: pwsh

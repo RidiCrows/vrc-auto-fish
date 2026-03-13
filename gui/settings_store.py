@@ -82,7 +82,7 @@ class AppSettingsStore:
                 is_same = old_val == new_val
 
             if not is_same:
-                setattr(config, attr, new_val)
+                self.set_config_attr(attr, new_val)
                 changed.append(f"{attr}: {old_val} → {new_val}")
 
         if changed:
@@ -92,7 +92,7 @@ class AppSettingsStore:
     def reset_params(self):
         """恢复当前参数为默认值，但保留已保存的预设。"""
         for attr, default_val in self.app.PARAM_DEFAULTS.items():
-            setattr(config, attr, default_val)
+            self.set_config_attr(attr, default_val)
         self.refresh_param_widgets()
         self.reset_extra_settings()
         self.save()
@@ -100,7 +100,7 @@ class AppSettingsStore:
 
     def reset_extra_settings(self):
         for attr, value in self.app.SETTINGS_DEFAULTS.items():
-            setattr(config, attr, value)
+            self.set_config_attr(attr, value)
 
         if hasattr(self.app, "var_skip_success"):
             self.app.var_skip_success.set(config.SKIP_SUCCESS_CHECK)
@@ -167,20 +167,39 @@ class AppSettingsStore:
         if data.get("ANTI_STUCK_MODE") == "crouch":
             data["ANTI_STUCK_MODE"] = "jump"
 
+    @staticmethod
+    def set_config_attr(attr: str, value):
+        setattr(config, attr, value)
+
+    def apply_bool_setting(self, attr: str, value: bool):
+        self.set_config_attr(attr, bool(value))
+
+    def apply_choice_setting(self, attr: str, value):
+        self.set_config_attr(attr, value)
+
+    def apply_language_setting(self, value: str):
+        return set_language(str(value))
+
+    def apply_detect_roi(self, roi):
+        if roi and isinstance(roi, list) and len(roi) == 4:
+            self.set_config_attr("DETECT_ROI", roi)
+            if hasattr(self.app, "var_roi"):
+                x, y, w, h = roi
+                self.app.var_roi.set(f"X={x} Y={y} {w}x{h}")
+                self.app.lbl_roi.config(foreground="green")
+        else:
+            self.set_config_attr("DETECT_ROI", None)
+            if hasattr(self.app, "var_roi"):
+                self.app.var_roi.set(self.app.tr("toggle.roiUnset"))
+                self.app.lbl_roi.config(foreground="gray")
+
     def apply_loaded_setting(self, attr: str, val) -> bool:
         if attr == "DETECT_ROI":
-            if val and isinstance(val, list) and len(val) == 4:
-                config.DETECT_ROI = val
-                if hasattr(self.app, "var_roi"):
-                    x, y, w, h = val
-                    self.app.var_roi.set(f"X={x} Y={y} {w}x{h}")
-                    self.app.lbl_roi.config(foreground="green")
-            else:
-                config.DETECT_ROI = None
+            self.apply_detect_roi(val)
             return True
 
         if attr == "LANGUAGE":
-            config.LANGUAGE = set_language(str(val))
+            self.apply_language_setting(str(val))
             if hasattr(self.app, "_update_window_title"):
                 self.app._update_window_title()
             if hasattr(self.app, "_refresh_language_choices"):
@@ -190,20 +209,20 @@ class AppSettingsStore:
             return True
 
         if attr == "YOLO_COLLECT":
-            config.YOLO_COLLECT = bool(val)
+            self.apply_bool_setting("YOLO_COLLECT", bool(val))
             if hasattr(self.app, "var_yolo_collect"):
                 self.app.var_yolo_collect.set(config.YOLO_COLLECT)
             return True
 
         if attr == "YOLO_DEVICE":
             if val in ("auto", "cpu", "gpu"):
-                config.YOLO_DEVICE = val
+                self.apply_choice_setting("YOLO_DEVICE", val)
                 if hasattr(self.app, "var_yolo_device"):
                     self.app.var_yolo_device.set(val)
             return True
 
         if attr == "SHOW_DEBUG":
-            config.SHOW_DEBUG = bool(val)
+            self.apply_bool_setting("SHOW_DEBUG", bool(val))
             if hasattr(self.app, "var_show_debug"):
                 self.app.var_show_debug.set(config.SHOW_DEBUG)
             return True
@@ -214,27 +233,27 @@ class AppSettingsStore:
             return True
 
         if attr == "SKIP_SUCCESS_CHECK":
-            config.SKIP_SUCCESS_CHECK = bool(val)
+            self.apply_bool_setting("SKIP_SUCCESS_CHECK", bool(val))
             if hasattr(self.app, "var_skip_success"):
                 self.app.var_skip_success.set(config.SKIP_SUCCESS_CHECK)
             self.app._update_success_threshold_state()
             return True
 
         if attr == "SYNC_PD_MODE":
-            config.SYNC_PD_MODE = bool(val)
+            self.apply_bool_setting("SYNC_PD_MODE", bool(val))
             if hasattr(self.app, "var_sync_pd_mode"):
                 self.app.var_sync_pd_mode.set(config.SYNC_PD_MODE)
             return True
 
         if attr == "ANTI_STUCK_MODE":
             if val in ("shake", "jump"):
-                config.ANTI_STUCK_MODE = val
+                self.apply_choice_setting("ANTI_STUCK_MODE", val)
                 if hasattr(self.app, "var_anti_mode"):
                     self.app.var_anti_mode.set(val)
             return True
 
         if attr == "SHAKE_HEAD_TIME":
-            config.SHAKE_HEAD_TIME = float(val)
+            self.apply_choice_setting("SHAKE_HEAD_TIME", float(val))
             if hasattr(self.app, "var_shake_time"):
                 self.app.var_shake_time.set(f"{config.SHAKE_HEAD_TIME:.3f}")
             return True
@@ -246,7 +265,7 @@ class AppSettingsStore:
             return True
 
         if attr in self.app._param_vars:
-            setattr(config, attr, val)
+            self.set_config_attr(attr, val)
             var, vtype = self.app._param_vars[attr]
             var.set(self.config_to_display(attr, vtype))
             return True

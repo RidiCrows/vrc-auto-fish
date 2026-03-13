@@ -1,30 +1,26 @@
 """
 训练工具路径
 ============
-集中维护独立训练工具使用的数据集和输出目录。
+保留 fish_trainer 目录结构，但底层路径计算共享给 trainer_common。
 """
 
-import os
-import sys
-
-import config
+from trainer_common.dataset import build_dataset_paths, ensure_dataset_dirs as ensure_dirs
+from trainer_common.profiles import get_profile
 
 
-APP_ROOT = (
-    os.path.dirname(sys.executable)
-    if getattr(sys, "frozen", False)
-    else config.BASE_DIR
-)
-BASE = os.path.join(APP_ROOT, "fish_trainer", "dataset")
-UNLABELED = os.path.join(BASE, "images", "unlabeled")
-TRAIN_IMG = os.path.join(BASE, "images", "train")
-TRAIN_LBL = os.path.join(BASE, "labels", "train")
-VAL_IMG = os.path.join(BASE, "images", "val")
-VAL_LBL = os.path.join(BASE, "labels", "val")
-DATA_YAML = os.path.join(BASE, "data_multiclass.yaml")
-RUNS_DIR = os.path.join(APP_ROOT, "fish_trainer", "runs")
+_PROFILE = get_profile("multicolor")
+_PATHS = build_dataset_paths(_PROFILE)
+
+APP_ROOT = _PROFILE.app_root
+BASE = _PATHS["BASE"]
+UNLABELED = _PATHS["UNLABELED"]
+TRAIN_IMG = _PATHS["TRAIN_IMG"]
+TRAIN_LBL = _PATHS["TRAIN_LBL"]
+VAL_IMG = _PATHS["VAL_IMG"]
+VAL_LBL = _PATHS["VAL_LBL"]
+DATA_YAML = _PATHS["DATA_YAML"]
+RUNS_DIR = _PATHS["RUNS_DIR"]
 
 
 def ensure_dataset_dirs():
-    for path in (UNLABELED, TRAIN_IMG, TRAIN_LBL, VAL_IMG, VAL_LBL):
-        os.makedirs(path, exist_ok=True)
+    ensure_dirs(_PROFILE)
