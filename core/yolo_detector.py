@@ -10,6 +10,7 @@ YOLO 目标检测器
   11 = track
   12 = progress
   13 = prog_hook
+  14 = fish_teal
 """
 
 import os

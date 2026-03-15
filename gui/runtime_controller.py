@@ -26,6 +26,7 @@ class AppRuntimeController:
         "fish_white",
         "fish_copper",
         "fish_green",
+        "fish_teal",
         "fish_blue",
         "fish_purple",
         "fish_golden",

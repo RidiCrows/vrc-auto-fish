@@ -174,7 +174,7 @@ TEMPLATE_FILES = {
 # 所有鱼模板 key 列表（find_fish 使用）
 FISH_KEYS = [
     "fish_white", "fish_green", "fish_golden",
-    "fish_copper", "fish_blue", "fish_purple", "fish_black",
+    "fish_copper", "fish_teal", "fish_blue", "fish_purple", "fish_black",
     "fish_pink", "fish_red", "fish_rainbow",
 ]
 
@@ -187,6 +187,7 @@ FISH_WHITELIST = {
     "fish_white":   True,   # 白鱼
     "fish_copper":  True,   # 铜鱼
     "fish_green":   True,   # 绿鱼
+    "fish_teal":    True,   # 青绿色鱼
     "fish_blue":    True,   # 蓝鱼
     "fish_purple":  True,   # 紫鱼
     "fish_pink":    True,   # 粉鱼

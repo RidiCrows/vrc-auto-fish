@@ -4,6 +4,7 @@ import unittest
 
 import config
 from utils.i18n import (
+    fish_name,
     get_language,
     normalize_language,
     read_persisted_language,
@@ -49,6 +50,16 @@ class I18nTests(unittest.TestCase):
         self.assertEqual(normalize_language("ja"), "ja-JP")
         self.assertEqual(normalize_language("ja-jp"), "ja-JP")
         self.assertEqual(normalize_language("jp"), "ja-JP")
+
+    def test_fish_teal_name_is_available_in_all_languages(self):
+        set_language("zh-CN")
+        self.assertEqual(fish_name("fish_teal"), "青绿色鱼")
+
+        set_language("en-US")
+        self.assertEqual(fish_name("fish_teal"), "Teal Fish")
+
+        set_language("ja-JP")
+        self.assertEqual(fish_name("fish_teal"), "青緑魚")
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ CLASS_NAMES = {
     10: "bar",
     11: "track",
     12: "progress",
+    13: "fish_teal",
 }
 
 CLASS_COLORS = {
@@ -34,6 +35,7 @@ CLASS_COLORS = {
     10: (255, 255, 255),
     11: (255, 100, 0),
     12: (0, 200, 255),
+    13: (200, 220, 0),
 }
 
 DISPLAY_NAMES = {
@@ -50,6 +52,7 @@ DISPLAY_NAMES = {
     10: "白条",
     11: "轨道",
     12: "进度条",
+    13: "青绿色鱼",
 }
 
 OVERLAY_NAMES = {
@@ -66,6 +69,7 @@ OVERLAY_NAMES = {
     10: "bar",
     11: "track",
     12: "progress",
+    13: "fish_teal",
 }
 
 KEY_TO_CLASS = {
@@ -82,6 +86,7 @@ KEY_TO_CLASS = {
     ord("b"): 10,
     ord("t"): 11,
     ord("p"): 12,
+    ord("0"): 13,
 }
 
 CLASS_SHORTCUTS = {
@@ -98,6 +103,7 @@ CLASS_SHORTCUTS = {
     10: "B",
     11: "T",
     12: "P",
+    13: "0",
 }
 
 

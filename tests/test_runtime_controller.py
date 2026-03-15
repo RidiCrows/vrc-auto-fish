@@ -126,6 +126,14 @@ class RuntimeControllerTests(unittest.TestCase):
             controller.update_yolo_status()
         self.assertIn("模型", app.var_yolo_status.get())
 
+    def test_fish_pairs_include_fish_teal(self):
+        app, _logs = self.make_app()
+        controller = AppRuntimeController(app)
+
+        fish_pairs = dict(controller._fish_pairs())
+
+        self.assertEqual(fish_pairs["fish_teal"], t("fish.fish_teal"))
+
 
 if __name__ == "__main__":
     unittest.main()

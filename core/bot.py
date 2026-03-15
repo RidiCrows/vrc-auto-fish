@@ -58,6 +58,7 @@ class FishingBot:
         "fish_white":   (255, 255, 255),
         "fish_copper":  (50, 127, 180),
         "fish_green":   (0, 255, 0),
+        "fish_teal":    (200, 220, 0),
         "fish_blue":    (255, 150, 0),
         "fish_purple":  (200, 50, 200),
         "fish_golden":  (0, 215, 255),

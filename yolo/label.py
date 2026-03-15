@@ -52,7 +52,7 @@ KEY_CTRL_D = 4
 
 def short_help():
     return (
-        "[F]=generic [1-9]=fish colors [B]=bar [T]=track [P]=progress [K]=hook "
+        "[F]=generic [1-9,0]=fish colors [B]=bar [T]=track [P]=progress [K]=hook "
         "[A]=auto [[/]]=box-/+ [,/.;']=move [J]=prev-image [N/M]=prev/next-class "
         "[Z]=undo [X]=clear [Ctrl+D]=delete [H]=help [S]=save [D]=skip [Q]=quit"
     )

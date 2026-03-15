@@ -4,9 +4,11 @@ import tempfile
 import unittest
 
 import config
+from fish_trainer.classes import CLASS_NAMES as FISH_TRAINER_CLASS_NAMES
 from fish_trainer.train import count_images as fish_trainer_count_images
 from trainer_common.dataset import get_dataset_stats, load_saved_roi
 from trainer_common.profiles import get_profile
+from yolo.classes import CLASS_NAMES as YOLO_CLASS_NAMES
 from yolo.train import count_images as yolo_count_images
 
 
@@ -60,6 +62,18 @@ class TrainerCommonTests(unittest.TestCase):
         self.assertEqual(stats["val_images"], 1)
         self.assertEqual(stats["val_labels"], 1)
         self.assertEqual(stats["labeled_pairs"], 2)
+
+    def test_fish_teal_is_appended_without_reindexing_existing_classes(self):
+        self.assertEqual(YOLO_CLASS_NAMES[10], "bar")
+        self.assertEqual(YOLO_CLASS_NAMES[11], "track")
+        self.assertEqual(YOLO_CLASS_NAMES[12], "progress")
+        self.assertEqual(YOLO_CLASS_NAMES[13], "prog_hook")
+        self.assertEqual(YOLO_CLASS_NAMES[14], "fish_teal")
+
+        self.assertEqual(FISH_TRAINER_CLASS_NAMES[10], "bar")
+        self.assertEqual(FISH_TRAINER_CLASS_NAMES[11], "track")
+        self.assertEqual(FISH_TRAINER_CLASS_NAMES[12], "progress")
+        self.assertEqual(FISH_TRAINER_CLASS_NAMES[13], "fish_teal")
 
 
 if __name__ == "__main__":
