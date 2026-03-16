@@ -37,6 +37,10 @@ class AppRuntimeController:
 
     def __init__(self, app):
         self.app = app
+        self._stats_win = None       # 統計ウィンドウ (Toplevel | None)
+        self._stats_canvas = None    # 棒グラフ Canvas
+        self._stats_body = None      # テーブル Frame
+        self._stats_last_count = -1  # 前回更新時の fish_count
 
     def tr(self, key: str, default: str | None = None, **kwargs):
         return t(key, default=default, **kwargs)
@@ -188,6 +192,250 @@ class AppRuntimeController:
         y = max((screen_h - final_h) // 2, 0)
         win.geometry(f"{final_w}x{final_h}+{x}+{y}")
 
+    BAR_COLORS = {
+        "fish_generic": "#a0a0a0",
+        "fish_black":   "#3a3a3a",
+        "fish_white":   "#e0e0e0",
+        "fish_copper":  "#b87333",
+        "fish_green":   "#4caf50",
+        "fish_teal":    "#009688",
+        "fish_blue":    "#2196f3",
+        "fish_purple":  "#9c27b0",
+        "fish_golden":  "#ffc107",
+        "fish_pink":    "#e91e8f",
+        "fish_red":     "#f44336",
+        "fish_rainbow": "#ff9800",
+    }
+
+    def _draw_stats_chart(self, canvas, pairs, stats):
+        """Canvas に積み上げ棒グラフを描画する。"""
+        canvas.delete("all")
+        bar_w = 34
+        gap = 16
+        chart_h = 160
+        top_margin = 26
+        bottom_margin = 55
+        left_margin = 10
+
+        n = len(pairs)
+        canvas_w = left_margin + n * (bar_w + gap) + gap
+        canvas_h = top_margin + chart_h + bottom_margin
+        canvas.config(width=canvas_w, height=canvas_h)
+
+        # 最大値を求めてスケール計算
+        max_val = 0
+        for key, _ in pairs:
+            entry = stats.get(key, {})
+            total = entry.get("success", 0) + entry.get("fail", 0)
+            if total > max_val:
+                max_val = total
+        if max_val == 0:
+            max_val = 1
+
+        baseline = top_margin + chart_h
+        # ベースライン
+        canvas.create_line(
+            left_margin, baseline,
+            left_margin + n * (bar_w + gap) + gap, baseline,
+            fill="#888888",
+        )
+
+        success_label = self.tr("runtime.statsSuccess")
+        fail_label = self.tr("runtime.statsFail")
+
+        for i, (key, display_name) in enumerate(pairs):
+            entry = stats.get(key, {})
+            s = entry.get("success", 0)
+            f = entry.get("fail", 0)
+            total = s + f
+
+            x0 = left_margin + gap + i * (bar_w + gap)
+            x1 = x0 + bar_w
+            bar_color = self.BAR_COLORS.get(key, "#a0a0a0")
+
+            # 成功部分（下）
+            s_h = int(chart_h * s / max_val) if s else 0
+            f_h = int(chart_h * f / max_val) if f else 0
+
+            y_success_top = baseline - s_h
+            if s > 0:
+                canvas.create_rectangle(
+                    x0, y_success_top, x1, baseline,
+                    fill=bar_color, outline=bar_color,
+                )
+            # 失敗部分（上に積む）
+            y_fail_top = y_success_top - f_h
+            if f > 0:
+                canvas.create_rectangle(
+                    x0, y_fail_top, x1, y_success_top,
+                    fill=bar_color, outline=bar_color, stipple="gray50",
+                )
+
+            # バー上に合計数
+            if total > 0:
+                canvas.create_text(
+                    (x0 + x1) // 2, y_fail_top - 10,
+                    text=str(total), font=("", 9), fill="#333333",
+                )
+
+            # 魚名ラベル（縦書き風に1文字ずつ改行）
+            short = display_name.lstrip("🐟 ").strip()
+            label = "\n".join(short[:4])
+            canvas.create_text(
+                (x0 + x1) // 2, baseline + 5,
+                text=label, font=("", 8), anchor="n", fill="#333333",
+            )
+
+        # 凡例
+        lx = left_margin + gap
+        ly = top_margin - 4
+        canvas.create_rectangle(lx, ly - 10, lx + 12, ly, fill="#4caf50", outline="#4caf50")
+        canvas.create_text(lx + 16, ly - 5, text=success_label, font=("", 9), anchor="w")
+        lx2 = lx + 70
+        canvas.create_rectangle(lx2, ly - 10, lx2 + 12, ly, fill="#4caf50", outline="#4caf50", stipple="gray50")
+        canvas.create_text(lx2 + 16, ly - 5, text=fail_label, font=("", 9), anchor="w")
+
+    def _populate_stats_table(self, body):
+        """テーブルフレームの中身を再描画する。"""
+        for child in body.winfo_children():
+            child.destroy()
+
+        body.columnconfigure(0, weight=1)
+        for c in range(1, 4):
+            body.columnconfigure(c, weight=0)
+
+        stats = self.app.bot.fish_stats
+        pairs = self._fish_pairs()
+
+        hdr_pad = {"padx": 8, "pady": 2}
+        hdr_font = ("", 10, "bold")
+        cell_font = ("", 10)
+        total_font = ("", 10, "bold")
+        row = 0
+
+        ttk.Label(body, text="", anchor="w").grid(row=row, column=0, sticky="w", **hdr_pad)
+        ttk.Label(body, text=self.tr("runtime.statsSuccess"), anchor="e",
+                  font=hdr_font).grid(row=row, column=1, sticky="e", **hdr_pad)
+        ttk.Label(body, text=self.tr("runtime.statsFail"), anchor="e",
+                  font=hdr_font).grid(row=row, column=2, sticky="e", **hdr_pad)
+        ttk.Label(body, text=self.tr("runtime.statsCount"), anchor="e",
+                  font=hdr_font).grid(row=row, column=3, sticky="e", **hdr_pad)
+        row += 1
+
+        total_success = 0
+        total_fail = 0
+        for key, display_name in pairs:
+            entry = stats.get(key, {})
+            s = entry.get("success", 0)
+            f = entry.get("fail", 0)
+            total_success += s
+            total_fail += f
+            ttk.Label(body, text=display_name, anchor="w", font=cell_font).grid(
+                row=row, column=0, sticky="w", **hdr_pad
+            )
+            ttk.Label(body, text=str(s), anchor="e", font=cell_font).grid(
+                row=row, column=1, sticky="e", **hdr_pad
+            )
+            ttk.Label(body, text=str(f), anchor="e", font=cell_font).grid(
+                row=row, column=2, sticky="e", **hdr_pad
+            )
+            ttk.Label(body, text=str(s + f), anchor="e", font=cell_font).grid(
+                row=row, column=3, sticky="e", **hdr_pad
+            )
+            row += 1
+
+        sep = ttk.Separator(body, orient="horizontal")
+        sep.grid(row=row, column=0, columnspan=4, sticky="ew", padx=8, pady=4)
+        row += 1
+
+        ttk.Label(body, text=self.tr("runtime.statsTotal"), anchor="w",
+                  font=total_font).grid(row=row, column=0, sticky="w", **hdr_pad)
+        ttk.Label(body, text=str(total_success), anchor="e",
+                  font=total_font).grid(row=row, column=1, sticky="e", **hdr_pad)
+        ttk.Label(body, text=str(total_fail), anchor="e",
+                  font=total_font).grid(row=row, column=2, sticky="e", **hdr_pad)
+        ttk.Label(body, text=str(total_success + total_fail), anchor="e",
+                  font=total_font).grid(row=row, column=3, sticky="e", **hdr_pad)
+
+        if config.SKIP_SUCCESS_CHECK:
+            row += 1
+            tk.Label(body, text=self.tr("runtime.statsSkipNote"),
+                     foreground="gray", font=("", 9)).grid(
+                row=row, column=0, columnspan=4, sticky="w", padx=8, pady=(4, 0))
+
+    def _refresh_stats_dialog(self):
+        """統計ウィンドウが開いていれば、グラフとテーブルを再描画する。"""
+        if self._stats_win is None:
+            return
+        try:
+            if not self._stats_win.winfo_exists():
+                self._stats_win = None
+                return
+        except tk.TclError:
+            self._stats_win = None
+            return
+        stats = self.app.bot.fish_stats
+        pairs = self._fish_pairs()
+        self._draw_stats_chart(self._stats_canvas, pairs, stats)
+        self._populate_stats_table(self._stats_body)
+
+    def on_stats(self):
+        # 既に開いていればフォーカスだけ当てる
+        if self._stats_win is not None:
+            try:
+                if self._stats_win.winfo_exists():
+                    self._stats_win.lift()
+                    self._stats_win.focus_force()
+                    return
+            except tk.TclError:
+                pass
+            self._stats_win = None
+
+        win = tk.Toplevel(self.app.root)
+        win.title(self.tr("runtime.statsTitle"))
+        win.resizable(False, False)
+        win.transient(self.app.root)
+
+        def _on_close_stats():
+            self._stats_win = None
+            self._stats_canvas = None
+            self._stats_body = None
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _on_close_stats)
+
+        stats = self.app.bot.fish_stats
+        pairs = self._fish_pairs()
+
+        # ── 棒グラフ ──
+        chart = tk.Canvas(win, bg="#f5f5f5", highlightthickness=0)
+        chart.pack(padx=12, pady=(10, 4))
+        self._draw_stats_chart(chart, pairs, stats)
+
+        # ── テーブル ──
+        body = ttk.Frame(win)
+        body.pack(fill="both", expand=True, padx=12, pady=(0, 6))
+        self._populate_stats_table(body)
+
+        ttk.Button(win, text=self.tr("runtime.confirm"), command=_on_close_stats).pack(pady=10)
+
+        # 参照を保持
+        self._stats_win = win
+        self._stats_canvas = chart
+        self._stats_body = body
+        self._stats_last_count = self.app.bot.fish_count
+
+        win.update_idletasks()
+        req_w = max(win.winfo_reqwidth() + 20, 600)
+        req_h = max(win.winfo_reqheight() + 10, 420)
+        screen_w = win.winfo_screenwidth()
+        screen_h = win.winfo_screenheight()
+        final_w = min(req_w, screen_w - 80)
+        final_h = min(req_h, screen_h - 80)
+        x = max((screen_w - final_w) // 2, 0)
+        y = max((screen_h - final_h) // 2, 0)
+        win.geometry(f"{final_w}x{final_h}+{x}+{y}")
+
     def on_topmost(self):
         topmost = self.app.var_topmost.get()
         self.app.root.wm_attributes("-topmost", 1 if topmost else 0)
@@ -272,7 +520,11 @@ class AppRuntimeController:
             pass
 
         self.app.var_state.set(self.app._translate_bot_state(self.app.bot.state))
-        self.app.var_count.set(str(self.app.bot.fish_count))
+        current_count = self.app.bot.fish_count
+        self.app.var_count.set(str(current_count))
+        if current_count != self._stats_last_count:
+            self._stats_last_count = current_count
+            self._refresh_stats_dialog()
         self.app.var_debug.set(
             self.tr("status.on") if self.app.bot.debug_mode else self.tr("status.off")
         )

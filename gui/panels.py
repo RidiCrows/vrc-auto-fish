@@ -57,6 +57,8 @@ def build_control_panel(app, parent, pad):
     app.btn_clearlog.pack(side="left", padx=2, pady=1)
     app.btn_whitelist = ttk.Button(row2, text=app.tr("button.whitelist"), command=app._on_whitelist, width=8)
     app.btn_whitelist.pack(side="left", padx=2, pady=1)
+    app.btn_stats = ttk.Button(row2, text=app.tr("button.stats"), command=app._on_stats, width=8)
+    app.btn_stats.pack(side="left", padx=2, pady=1)
     app.btn_roi = ttk.Button(row2, text=app.tr("button.selectRoi"), command=app._on_select_roi, width=10)
     app.btn_roi.pack(side="left", padx=2, pady=1)
     app.btn_clear_roi = ttk.Button(row2, text=app.tr("button.clearRoi"), command=app._on_clear_roi, width=10)
