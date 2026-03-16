@@ -7,6 +7,7 @@ GUI 运行时动作
 import os
 import threading
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk
 
 import cv2
@@ -37,10 +38,9 @@ class AppRuntimeController:
 
     def __init__(self, app):
         self.app = app
-        self._stats_win = None       # 統計ウィンドウ (Toplevel | None)
-        self._stats_canvas = None    # 棒グラフ Canvas
-        self._stats_body = None      # テーブル Frame
-        self._stats_last_count = -1  # 前回更新時の fish_count
+        self._stats_win = None       # 统计窗口 (Toplevel | None)
+        self._stats_body = None      # 表格 Frame
+        self._stats_last_count = -1  # 上次更新时的 fish_count
 
     def tr(self, key: str, default: str | None = None, **kwargs):
         return t(key, default=default, **kwargs)
@@ -207,22 +207,68 @@ class AppRuntimeController:
         "fish_rainbow": "#ff9800",
     }
 
-    def _draw_stats_chart(self, canvas, pairs, stats):
-        """Canvas に積み上げ棒グラフを描画する。"""
-        canvas.delete("all")
-        bar_w = 34
-        gap = 16
-        chart_h = 160
-        top_margin = 26
-        bottom_margin = 55
-        left_margin = 10
+    def _populate_stats_view(self, body):
+        """绘制横向条形图与表格合并的统一视图。"""
+        for child in body.winfo_children():
+            child.destroy()
 
-        n = len(pairs)
-        canvas_w = left_margin + n * (bar_w + gap) + gap
-        canvas_h = top_margin + chart_h + bottom_margin
-        canvas.config(width=canvas_w, height=canvas_h)
+        # 列设置: 0=色块■ 1=鱼名 2=横条 3=成功 4=失败 5=合计
+        body.columnconfigure(0, weight=0)
+        body.columnconfigure(1, weight=1)
+        body.columnconfigure(2, weight=0)
+        for c in range(3, 6):
+            body.columnconfigure(c, weight=0)
 
-        # 最大値を求めてスケール計算
+        stats = self.app.bot.fish_stats
+        pairs = self._fish_pairs()
+
+        # 从 TkDefaultFont 创建粗体副本
+        default_font = tkfont.nametofont("TkDefaultFont")
+        bold_font = default_font.copy()
+        bold_font.config(weight="bold")
+
+        hdr_pad = {"padx": 6, "pady": 2}
+        success_label = self.tr("runtime.statsSuccess")
+        fail_label = self.tr("runtime.statsFail")
+        count_label = self.tr("runtime.statsCount")
+
+        row = 0
+
+        # Row 0: 图例
+        legend_frame = ttk.Frame(body)
+        legend_frame.grid(row=row, column=0, columnspan=6, sticky="w",
+                          padx=6, pady=(0, 4))
+        legend_success = tk.Canvas(legend_frame, width=14, height=14,
+                                   highlightthickness=0)
+        legend_success.pack(side="left", padx=(0, 2))
+        legend_success.create_rectangle(0, 0, 14, 14, fill="#4caf50",
+                                        outline="#4caf50")
+        ttk.Label(legend_frame, text=success_label).pack(side="left",
+                                                         padx=(0, 12))
+        legend_fail = tk.Canvas(legend_frame, width=14, height=14,
+                                highlightthickness=0)
+        legend_fail.pack(side="left", padx=(0, 2))
+        legend_fail.create_rectangle(0, 0, 14, 14, fill="#4caf50",
+                                     outline="#4caf50", stipple="gray50")
+        ttk.Label(legend_frame, text=fail_label).pack(side="left")
+        row += 1
+
+        # Row 1: 表头
+        ttk.Label(body, text="", anchor="w").grid(
+            row=row, column=0, sticky="w", **hdr_pad)
+        ttk.Label(body, text="", anchor="w").grid(
+            row=row, column=1, sticky="w", **hdr_pad)
+        ttk.Label(body, text="", anchor="w").grid(
+            row=row, column=2, sticky="w", **hdr_pad)
+        ttk.Label(body, text=success_label, anchor="e", font=bold_font).grid(
+            row=row, column=3, sticky="e", **hdr_pad)
+        ttk.Label(body, text=fail_label, anchor="e", font=bold_font).grid(
+            row=row, column=4, sticky="e", **hdr_pad)
+        ttk.Label(body, text=count_label, anchor="e", font=bold_font).grid(
+            row=row, column=5, sticky="e", **hdr_pad)
+        row += 1
+
+        # 求最大值用于缩放计算
         max_val = 0
         for key, _ in pairs:
             entry = stats.get(key, {})
@@ -232,139 +278,89 @@ class AppRuntimeController:
         if max_val == 0:
             max_val = 1
 
-        baseline = top_margin + chart_h
-        # ベースライン
-        canvas.create_line(
-            left_margin, baseline,
-            left_margin + n * (bar_w + gap) + gap, baseline,
-            fill="#888888",
-        )
-
-        success_label = self.tr("runtime.statsSuccess")
-        fail_label = self.tr("runtime.statsFail")
-
-        for i, (key, display_name) in enumerate(pairs):
-            entry = stats.get(key, {})
-            s = entry.get("success", 0)
-            f = entry.get("fail", 0)
-            total = s + f
-
-            x0 = left_margin + gap + i * (bar_w + gap)
-            x1 = x0 + bar_w
-            bar_color = self.BAR_COLORS.get(key, "#a0a0a0")
-
-            # 成功部分（下）
-            s_h = int(chart_h * s / max_val) if s else 0
-            f_h = int(chart_h * f / max_val) if f else 0
-
-            y_success_top = baseline - s_h
-            if s > 0:
-                canvas.create_rectangle(
-                    x0, y_success_top, x1, baseline,
-                    fill=bar_color, outline=bar_color,
-                )
-            # 失敗部分（上に積む）
-            y_fail_top = y_success_top - f_h
-            if f > 0:
-                canvas.create_rectangle(
-                    x0, y_fail_top, x1, y_success_top,
-                    fill=bar_color, outline=bar_color, stipple="gray50",
-                )
-
-            # バー上に合計数
-            if total > 0:
-                canvas.create_text(
-                    (x0 + x1) // 2, y_fail_top - 10,
-                    text=str(total), font=("", 9), fill="#333333",
-                )
-
-            # 魚名ラベル（縦書き風に1文字ずつ改行）
-            short = display_name.lstrip("🐟 ").strip()
-            label = "\n".join(short[:4])
-            canvas.create_text(
-                (x0 + x1) // 2, baseline + 5,
-                text=label, font=("", 8), anchor="n", fill="#333333",
-            )
-
-        # 凡例
-        lx = left_margin + gap
-        ly = top_margin - 4
-        canvas.create_rectangle(lx, ly - 10, lx + 12, ly, fill="#4caf50", outline="#4caf50")
-        canvas.create_text(lx + 16, ly - 5, text=success_label, font=("", 9), anchor="w")
-        lx2 = lx + 70
-        canvas.create_rectangle(lx2, ly - 10, lx2 + 12, ly, fill="#4caf50", outline="#4caf50", stipple="gray50")
-        canvas.create_text(lx2 + 16, ly - 5, text=fail_label, font=("", 9), anchor="w")
-
-    def _populate_stats_table(self, body):
-        """テーブルフレームの中身を再描画する。"""
-        for child in body.winfo_children():
-            child.destroy()
-
-        body.columnconfigure(0, weight=1)
-        for c in range(1, 4):
-            body.columnconfigure(c, weight=0)
-
-        stats = self.app.bot.fish_stats
-        pairs = self._fish_pairs()
-
-        hdr_pad = {"padx": 8, "pady": 2}
-        hdr_font = ("", 10, "bold")
-        cell_font = ("", 10)
-        total_font = ("", 10, "bold")
-        row = 0
-
-        ttk.Label(body, text="", anchor="w").grid(row=row, column=0, sticky="w", **hdr_pad)
-        ttk.Label(body, text=self.tr("runtime.statsSuccess"), anchor="e",
-                  font=hdr_font).grid(row=row, column=1, sticky="e", **hdr_pad)
-        ttk.Label(body, text=self.tr("runtime.statsFail"), anchor="e",
-                  font=hdr_font).grid(row=row, column=2, sticky="e", **hdr_pad)
-        ttk.Label(body, text=self.tr("runtime.statsCount"), anchor="e",
-                  font=hdr_font).grid(row=row, column=3, sticky="e", **hdr_pad)
-        row += 1
+        bar_canvas_w = 160
+        bar_canvas_h = 18
+        bar_h = 14
+        bar_y0 = (bar_canvas_h - bar_h) // 2
+        bar_y1 = bar_y0 + bar_h
 
         total_success = 0
         total_fail = 0
+
+        # Row 2–13: 数据行
         for key, display_name in pairs:
             entry = stats.get(key, {})
             s = entry.get("success", 0)
             f = entry.get("fail", 0)
+            total = s + f
             total_success += s
             total_fail += f
-            ttk.Label(body, text=display_name, anchor="w", font=cell_font).grid(
-                row=row, column=0, sticky="w", **hdr_pad
-            )
-            ttk.Label(body, text=str(s), anchor="e", font=cell_font).grid(
-                row=row, column=1, sticky="e", **hdr_pad
-            )
-            ttk.Label(body, text=str(f), anchor="e", font=cell_font).grid(
-                row=row, column=2, sticky="e", **hdr_pad
-            )
-            ttk.Label(body, text=str(s + f), anchor="e", font=cell_font).grid(
-                row=row, column=3, sticky="e", **hdr_pad
-            )
+            bar_color = self.BAR_COLORS.get(key, "#a0a0a0")
+
+            # 色块
+            swatch = tk.Canvas(body, width=14, height=14, highlightthickness=0)
+            swatch.create_rectangle(0, 0, 14, 14, fill=bar_color,
+                                    outline=bar_color)
+            swatch.grid(row=row, column=0, sticky="w", padx=(6, 2), pady=2)
+
+            # 鱼名
+            ttk.Label(body, text=display_name, anchor="w").grid(
+                row=row, column=1, sticky="w", **hdr_pad)
+
+            # 横条
+            bar_cv = tk.Canvas(body, width=bar_canvas_w, height=bar_canvas_h,
+                               highlightthickness=0, bg="#f5f5f5")
+            bar_cv.grid(row=row, column=2, sticky="w", padx=4, pady=2)
+
+            if total > 0:
+                s_w = int(bar_canvas_w * s / max_val)
+                f_w = int(bar_canvas_w * f / max_val)
+                if s > 0:
+                    bar_cv.create_rectangle(0, bar_y0, s_w, bar_y1,
+                                            fill=bar_color, outline=bar_color)
+                if f > 0:
+                    bar_cv.create_rectangle(s_w, bar_y0, s_w + f_w, bar_y1,
+                                            fill=bar_color, outline=bar_color,
+                                            stipple="gray50")
+
+            # 成功/失败/合计
+            ttk.Label(body, text=str(s), anchor="e").grid(
+                row=row, column=3, sticky="e", **hdr_pad)
+            ttk.Label(body, text=str(f), anchor="e").grid(
+                row=row, column=4, sticky="e", **hdr_pad)
+            ttk.Label(body, text=str(total), anchor="e").grid(
+                row=row, column=5, sticky="e", **hdr_pad)
             row += 1
 
+        # 分隔线
         sep = ttk.Separator(body, orient="horizontal")
-        sep.grid(row=row, column=0, columnspan=4, sticky="ew", padx=8, pady=4)
+        sep.grid(row=row, column=0, columnspan=6, sticky="ew", padx=6, pady=4)
         row += 1
 
+        # 合计行
+        ttk.Label(body, text="", anchor="w").grid(
+            row=row, column=0, sticky="w", **hdr_pad)
         ttk.Label(body, text=self.tr("runtime.statsTotal"), anchor="w",
-                  font=total_font).grid(row=row, column=0, sticky="w", **hdr_pad)
+                  font=bold_font).grid(row=row, column=1, sticky="w", **hdr_pad)
+        ttk.Label(body, text="", anchor="w").grid(
+            row=row, column=2, sticky="w", **hdr_pad)
         ttk.Label(body, text=str(total_success), anchor="e",
-                  font=total_font).grid(row=row, column=1, sticky="e", **hdr_pad)
+                  font=bold_font).grid(row=row, column=3, sticky="e", **hdr_pad)
         ttk.Label(body, text=str(total_fail), anchor="e",
-                  font=total_font).grid(row=row, column=2, sticky="e", **hdr_pad)
+                  font=bold_font).grid(row=row, column=4, sticky="e", **hdr_pad)
         ttk.Label(body, text=str(total_success + total_fail), anchor="e",
-                  font=total_font).grid(row=row, column=3, sticky="e", **hdr_pad)
+                  font=bold_font).grid(row=row, column=5, sticky="e", **hdr_pad)
 
+        # 跳过注释（条件性）
         if config.SKIP_SUCCESS_CHECK:
             row += 1
-            tk.Label(body, text=self.tr("runtime.statsSkipNote"),
-                     foreground="gray", font=("", 9)).grid(
-                row=row, column=0, columnspan=4, sticky="w", padx=8, pady=(4, 0))
+            ttk.Label(body, text=self.tr("runtime.statsSkipNote"),
+                      foreground="gray").grid(
+                row=row, column=0, columnspan=6, sticky="w",
+                padx=6, pady=(4, 0))
 
     def _refresh_stats_dialog(self):
-        """統計ウィンドウが開いていれば、グラフとテーブルを再描画する。"""
+        """若统计窗口已打开，则重绘视图。"""
         if self._stats_win is None:
             return
         try:
@@ -374,13 +370,10 @@ class AppRuntimeController:
         except tk.TclError:
             self._stats_win = None
             return
-        stats = self.app.bot.fish_stats
-        pairs = self._fish_pairs()
-        self._draw_stats_chart(self._stats_canvas, pairs, stats)
-        self._populate_stats_table(self._stats_body)
+        self._populate_stats_view(self._stats_body)
 
     def on_stats(self):
-        # 既に開いていればフォーカスだけ当てる
+        # 若已打开则仅聚焦
         if self._stats_win is not None:
             try:
                 if self._stats_win.winfo_exists():
@@ -398,36 +391,26 @@ class AppRuntimeController:
 
         def _on_close_stats():
             self._stats_win = None
-            self._stats_canvas = None
             self._stats_body = None
             win.destroy()
 
         win.protocol("WM_DELETE_WINDOW", _on_close_stats)
 
-        stats = self.app.bot.fish_stats
-        pairs = self._fish_pairs()
-
-        # ── 棒グラフ ──
-        chart = tk.Canvas(win, bg="#f5f5f5", highlightthickness=0)
-        chart.pack(padx=12, pady=(10, 4))
-        self._draw_stats_chart(chart, pairs, stats)
-
-        # ── テーブル ──
+        # ── 统一视图 ──
         body = ttk.Frame(win)
-        body.pack(fill="both", expand=True, padx=12, pady=(0, 6))
-        self._populate_stats_table(body)
+        body.pack(fill="both", expand=True, padx=12, pady=(10, 6))
+        self._populate_stats_view(body)
 
         ttk.Button(win, text=self.tr("runtime.confirm"), command=_on_close_stats).pack(pady=10)
 
-        # 参照を保持
+        # 保持引用
         self._stats_win = win
-        self._stats_canvas = chart
         self._stats_body = body
         self._stats_last_count = self.app.bot.fish_count
 
         win.update_idletasks()
-        req_w = max(win.winfo_reqwidth() + 20, 600)
-        req_h = max(win.winfo_reqheight() + 10, 420)
+        req_w = max(win.winfo_reqwidth() + 20, 520)
+        req_h = max(win.winfo_reqheight() + 10, 460)
         screen_w = win.winfo_screenwidth()
         screen_h = win.winfo_screenheight()
         final_w = min(req_w, screen_w - 80)
