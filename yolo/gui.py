@@ -30,6 +30,8 @@ def build_parser():
     parser.add_argument("--max", type=int, default=0, help="采集最大截图数")
     parser.add_argument("--split", type=float, default=0.2, help="标注时验证集比例")
     parser.add_argument("--relabel", action="store_true", help="重新标注已有数据")
+    parser.add_argument("--predict-model", type=str, default="", help="自动打标模型路径")
+    parser.add_argument("--auto-predict", action="store_true", help="启用自动打标")
     return parser
 
 
@@ -45,6 +47,10 @@ def dispatch_tool(args):
         label_args = ["--split", str(args.split)]
         if args.relabel:
             label_args.append("--relabel")
+        if args.predict_model:
+            label_args.extend(["--predict-model", args.predict_model])
+        if args.auto_predict:
+            label_args.append("--auto-predict")
         label.main(label_args)
         return True
     return False
