@@ -13,7 +13,15 @@ import datetime
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
-APP_DIRS = ['core', 'gui', 'utils']
+APP_DIRS = [
+    'core',
+    'gui',
+    'utils',
+    'yolo',
+    'trainer_common',
+    'fish_trainer',
+    'imitation',
+]
 APP_FILES = ['config.py', 'main.py']
 RESOURCE_DIRS = ['img']
 RESOURCE_FILES = [
@@ -22,6 +30,7 @@ RESOURCE_FILES = [
 ]
 
 EXCLUDE = {'__pycache__', '.pyc', '.pyo', '.bak'}
+APP_TEXT_RESOURCE_EXTS = {'.py', '.json', '.yaml', '.yml'}
 
 
 def should_include(path):
@@ -53,7 +62,7 @@ def make_patch():
                     full = os.path.join(dirpath, fn)
                     if not should_include(full):
                         continue
-                    if not fn.endswith('.py'):
+                    if os.path.splitext(fn)[1].lower() not in APP_TEXT_RESOURCE_EXTS:
                         continue
                     rel = os.path.relpath(full, ROOT)
                     zf.write(full, os.path.join('patch', rel))

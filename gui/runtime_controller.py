@@ -7,7 +7,6 @@ GUI 运行时动作
 import os
 import threading
 import tkinter as tk
-import tkinter.font as tkfont
 from tkinter import ttk
 
 import cv2
@@ -222,10 +221,8 @@ class AppRuntimeController:
         stats = self.app.bot.fish_stats
         pairs = self._fish_pairs()
 
-        # 从 TkDefaultFont 创建粗体副本
-        default_font = tkfont.nametofont("TkDefaultFont")
-        bold_font = default_font.copy()
-        bold_font.config(weight="bold")
+        # 使用命名字体，避免补丁环境缺少 tkinter.font 子模块时导入失败。
+        bold_font = ("TkDefaultFont", 9, "bold")
 
         hdr_pad = {"padx": 6, "pady": 2}
         success_label = self.tr("runtime.statsSuccess")
