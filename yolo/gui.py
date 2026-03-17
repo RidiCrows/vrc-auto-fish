@@ -36,7 +36,8 @@ def build_parser():
     return parser
 
 
-def dispatch_tool(args):
+def dispatch_tool(args, extra_args=None):
+    extra_args = extra_args or []
     if args.tool == "collect":
         collect_args = [
             "--fps", str(args.fps),
@@ -45,6 +46,8 @@ def dispatch_tool(args):
         ]
         if args.base_dir:
             collect_args.extend(["--base-dir", args.base_dir])
+        collect_args.extend(extra_args)
+        print("[DEBUG] dispatch_tool -> collect_args:", collect_args)
         collect.main(collect_args)
         return True
     if args.tool == "label":
@@ -57,6 +60,7 @@ def dispatch_tool(args):
             label_args.append("--auto-predict")
         if args.base_dir:
             label_args.extend(["--base-dir", args.base_dir])
+        label_args.extend(extra_args)
         label.main(label_args)
         return True
     return False
@@ -481,8 +485,9 @@ def launch_gui():
 
 def main(argv=None):
     parser = build_parser()
-    args = parser.parse_args(argv)
-    if dispatch_tool(args):
+    args, unknown = parser.parse_known_args(argv)
+    # 如果是子工具模式，将未知参数原样传递下去
+    if dispatch_tool(args, unknown):
         return
     launch_gui()
 

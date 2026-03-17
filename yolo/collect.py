@@ -53,8 +53,20 @@ def main(argv=None):
         profile = CustomPathProfile(profile, custom_dataset_root=base_dir)
     
     # 构建过滤后的 argv（移除 --base-dir 参数），用于 trainer_common.collect
-    filtered_argv = [arg for arg in (argv or []) if not arg.startswith("--base-dir")]
-    run_collect(profile, safe_print, argv=filtered_argv)
+    new_argv = []
+    skip_next = False
+    for arg in (argv or []):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "--base-dir":
+            skip_next = True
+            continue
+        if arg.startswith("--base-dir="):
+            continue
+        new_argv.append(arg)
+    
+    run_collect(profile, safe_print, argv=new_argv)
 
 
 if __name__ == "__main__":
