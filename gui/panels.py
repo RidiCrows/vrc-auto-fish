@@ -134,10 +134,28 @@ def build_yolo_panel(app, parent, pad):
     app.var_yolo_device = tk.StringVar(value=config.normalize_yolo_device(config.YOLO_DEVICE))
     cmb_dev = ttk.Combobox(
         frm_yolo, textvariable=app.var_yolo_device,
-        values=["auto", "cpu", "cuda"], state="readonly", width=5
+        values=["auto", "cpu", "cuda", "ncnn"], state="readonly", width=5
     )
     cmb_dev.pack(side="left", padx=2)
     cmb_dev.bind("<<ComboboxSelected>>", app._on_yolo_device_change)
+    lbl_yolo_device_help = tk.Label(
+        frm_yolo,
+        text="?",
+        fg="gray",
+        cursor="question_arrow",
+        padx=2,
+    )
+    lbl_yolo_device_help.pack(side="left", padx=(0, 4))
+    app._create_tooltip(lbl_yolo_device_help, app.tr("tooltip.yoloDevice"))
+    lbl_yolo_tutorial = tk.Label(
+        frm_yolo,
+        text="教程",
+        fg="gray",
+        cursor="question_arrow",
+        padx=2,
+    )
+    lbl_yolo_tutorial.pack(side="left", padx=(0, 6))
+    app._create_tooltip(lbl_yolo_tutorial, app.tr("tooltip.yoloDeviceTutorial"))
 
     app.var_full_rate_wait_hook = tk.BooleanVar(value=config.FULL_RATE_WAIT_HOOK)
     ttk.Checkbutton(

@@ -823,12 +823,14 @@ class FishingApp:
         """切换 YOLO 推理设备"""
         dev = config.normalize_yolo_device(self.var_yolo_device.get())
         self.var_yolo_device.set(dev)
-        labels = {"auto": "auto", "cpu": "cpu", "cuda": "cuda"}
+        labels = {"auto": "auto", "cpu": "cpu", "cuda": "cuda", "ncnn": "ncnn"}
         self._apply_choice_setting(
             "YOLO_DEVICE",
             dev,
             self.tr("log.yoloDeviceChanged", device=labels.get(dev, dev)),
         )
+        self.runtime.preload_yolo(force_reload=True)
+        self._update_yolo_status()
 
     def _on_full_rate_wait_hook_toggle(self):
         """切换等待提竿阶段是否满帧检测。"""

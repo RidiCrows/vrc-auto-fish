@@ -15,20 +15,42 @@ class YoloDetectorTests(unittest.TestCase):
     def test_select_runtime_device_normalizes_legacy_gpu_name(self):
         self.assertEqual(
             YoloDetector.select_runtime_device("gpu", cuda_available=True),
-            (0, "cuda"),
+            ("torch", 0, "cuda"),
         )
         self.assertEqual(
             YoloDetector.select_runtime_device("auto", cuda_available=False),
-            ("cpu", "cpu"),
+            ("torch", "cpu", "cpu"),
         )
         self.assertEqual(
             YoloDetector.select_runtime_device("cpu", cuda_available=True),
-            ("cpu", "cpu"),
+            ("torch", "cpu", "cpu"),
+        )
+        self.assertEqual(
+            YoloDetector.select_runtime_device(
+                "ncnn",
+                cuda_available=False,
+                ncnn_available=True,
+            ),
+            ("ncnn", "cpu", "ncnn"),
         )
 
     def test_select_runtime_device_rejects_forced_cuda_without_cuda(self):
         with self.assertRaises(RuntimeError):
             YoloDetector.select_runtime_device("cuda", cuda_available=False)
+
+    def test_select_runtime_device_rejects_forced_ncnn_without_support(self):
+        with self.assertRaises(RuntimeError):
+            YoloDetector.select_runtime_device(
+                "ncnn",
+                cuda_available=False,
+                ncnn_available=False,
+            )
+
+    def test_resolve_ncnn_model_path_uses_ultralytics_suffix(self):
+        self.assertEqual(
+            YoloDetector.resolve_ncnn_model_path(r"E:\fish\weights\best.pt"),
+            r"E:\fish\weights\best_ncnn_model",
+        )
 
 
 if __name__ == "__main__":

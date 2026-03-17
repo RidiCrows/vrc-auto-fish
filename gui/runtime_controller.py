@@ -423,11 +423,13 @@ class AppRuntimeController:
             self.app.root.lift()
             self.app.root.focus_force()
 
-    def preload_yolo(self):
+    def preload_yolo(self, force_reload: bool = False):
         def load():
             try:
                 from core.bot import _get_yolo_detector
-                self.app.bot.yolo = _get_yolo_detector()
+                self.app.bot.yolo = _get_yolo_detector(force_reload=force_reload)
+                if hasattr(self.app, "root"):
+                    self.app.root.after(0, self.update_yolo_status)
             except Exception as e:
                 self.app._log_t("runtime.yoloPreloadFailed", error=e)
 
@@ -435,7 +437,9 @@ class AppRuntimeController:
 
     def update_yolo_status(self):
         """更新 YOLO 状态显示。"""
-        model_ok = os.path.exists(config.YOLO_MODEL)
+        device_pref = config.normalize_yolo_device(config.YOLO_DEVICE)
+        pt_model_ok = os.path.exists(config.YOLO_MODEL)
+        ncnn_model_ok = os.path.isdir(config.YOLO_MODEL_NCNN)
         unlabeled = YOLO_UNLABELED
         train = YOLO_TRAIN_IMG
         n_unlabeled = len([
@@ -447,8 +451,23 @@ class AppRuntimeController:
             if f.endswith((".png", ".jpg"))
         ]) if os.path.isdir(train) else 0
 
+        if device_pref == "ncnn":
+            model_part = (
+                self.tr("yolo.ncnnModelOk")
+                if ncnn_model_ok
+                else self.tr("yolo.ncnnModelMissing")
+            )
+        else:
+            model_part = (
+                self.tr("yolo.modelOk")
+                if pt_model_ok
+                else self.tr("yolo.modelMissing")
+            )
+        current_yolo = getattr(self.app.bot, "yolo", None)
+        backend = getattr(current_yolo, "_device_label", device_pref)
         parts = [
-            self.tr("yolo.modelOk") if model_ok else self.tr("yolo.modelMissing"),
+            model_part,
+            self.tr("yolo.backendActive", backend=backend),
             self.tr("yolo.trainCount", count=n_train),
             self.tr("yolo.unlabeledCount", count=n_unlabeled),
         ]

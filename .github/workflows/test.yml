@@ -40,7 +40,7 @@ jobs:
 
       - name: Import dependency sanity check
         shell: pwsh
-        run: python -c "import cv2, keyboard, torch, ultralytics"
+        run: python -c "import cv2, keyboard, ncnn, torch, ultralytics"
 
       - name: Ruff syntax guardrails
         shell: pwsh
@@ -54,6 +54,7 @@ jobs:
           tests.test_pd_controller
           tests.test_settings_store
           tests.test_runtime_controller
+          tests.test_yolo_detector
           tests.test_minigame_detection
           tests.test_minigame_session
           tests.test_labeling_common

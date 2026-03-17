@@ -137,11 +137,24 @@ DETECT_ROI        = None           # 玩家框选的检测区域 [x, y, w, h], N
 # ═══════════════════════════════════════════════════════════
 USE_YOLO      = True
 YOLO_MODEL    = resolve_resource_path("yolo/runs/fish_detect/weights/best.pt")
+
+
+def resolve_ncnn_model_path(model_path: str | None = None) -> str:
+    source = model_path or YOLO_MODEL
+    if os.path.isdir(source):
+        return source
+    root, ext = os.path.splitext(source)
+    if ext.lower() == ".pt":
+        return f"{root}_ncnn_model"
+    return f"{source}_ncnn_model"
+
+
+YOLO_MODEL_NCNN = resolve_ncnn_model_path(YOLO_MODEL)
 YOLO_CONF     = 0.30              # YOLO 检测置信度阈值
 YOLO_RAW_DEBUG = True             # True=打印排查用 YOLO 原始检测日志（会刷屏）
 YOLO_FISH_STABLE_FRAMES = 3       # 鱼类别需连续命中N帧才切换，抑制颜色抖动
 YOLO_WHITELIST_CONFIRM_FRAMES = 6 # 非白名单鱼需连续命中N帧才放弃，避免单帧误判
-YOLO_DEVICE   = "auto"            # "auto" 自动选择 / "cpu" 强制 CPU / "cuda" 强制 CUDA
+YOLO_DEVICE   = "auto"            # "auto" 自动选择 / "cpu" 强制 CPU / "cuda" 强制 CUDA / "ncnn" 强制 NCNN
 YOLO_COLLECT  = False             # True=钓鱼时自动保存截图用于训练
 TRACK_MIN_ANGLE   = 3.0           # 轨道倾斜角度阈值(度), 超过此值启用旋转补偿
 TRACK_MAX_ANGLE   = 45.0          # 轨道最大合理角度(度), 超过视为误检(如把海平线当轨道)
@@ -206,6 +219,8 @@ LEGACY_FISH_KEY_ALIASES = {
 
 YOLO_DEVICE_ALIASES = {
     "gpu": "cuda",
+    "ncnn-cpu": "ncnn",
+    "vulkan": "ncnn",
 }
 
 
@@ -213,6 +228,6 @@ def normalize_yolo_device(device: str | None) -> str:
     if not isinstance(device, str):
         return "auto"
     normalized = YOLO_DEVICE_ALIASES.get(device.lower(), device.lower())
-    if normalized in ("auto", "cpu", "cuda"):
+    if normalized in ("auto", "cpu", "cuda", "ncnn"):
         return normalized
     return "auto"

@@ -218,7 +218,7 @@ class AppSettingsStore:
 
         if attr == "YOLO_DEVICE":
             normalized = config.normalize_yolo_device(str(val))
-            if normalized in ("auto", "cpu", "cuda"):
+            if normalized in ("auto", "cpu", "cuda", "ncnn"):
                 self.apply_choice_setting("YOLO_DEVICE", normalized)
                 if hasattr(self.app, "var_yolo_device"):
                     self.app.var_yolo_device.set(normalized)

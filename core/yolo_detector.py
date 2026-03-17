@@ -27,6 +27,13 @@ try:
 except ImportError:
     pass
 
+_NCNN_AVAILABLE = False
+try:
+    import ncnn  # type: ignore
+    _NCNN_AVAILABLE = True
+except ImportError:
+    ncnn = None
+
 
 class YoloDetector:
     """YOLO-based fishing game detector."""
@@ -51,70 +58,181 @@ class YoloDetector:
         return config.normalize_yolo_device(device)
 
     @staticmethod
-    def select_runtime_device(device: str | None, cuda_available: bool):
+    def select_runtime_device(
+        device: str | None,
+        cuda_available: bool,
+        ncnn_available: bool = False,
+    ):
         normalized = YoloDetector.normalize_device_preference(device)
         if normalized == "cpu":
-            return "cpu", "cpu"
+            return "torch", "cpu", "cpu"
         if normalized == "cuda":
             if not cuda_available:
                 raise RuntimeError("CUDA 不可用")
-            return 0, "cuda"
+            return "torch", 0, "cuda"
+        if normalized == "ncnn":
+            if not ncnn_available:
+                raise RuntimeError("NCNN 不可用")
+            return "ncnn", "cpu", "ncnn"
         if cuda_available:
-            return 0, "cuda"
-        return "cpu", "cpu"
+            return "torch", 0, "cuda"
+        return "torch", "cpu", "cpu"
 
-    def __init__(self, model_path: str, conf: float = 0.5, device="auto"):
+    @staticmethod
+    def resolve_ncnn_model_path(model_path: str) -> str:
+        return config.resolve_ncnn_model_path(model_path)
+
+    @staticmethod
+    def cuda_available() -> bool:
+        try:
+            import torch
+            return torch.cuda.is_available()
+        except Exception:
+            return False
+
+    @staticmethod
+    def ncnn_available() -> bool:
+        return _NCNN_AVAILABLE
+
+    @staticmethod
+    def select_ncnn_runtime_device():
+        if not _NCNN_AVAILABLE:
+            return "cpu", "ncnn"
+        try:
+            gpu_count = int(ncnn.get_gpu_count())
+        except Exception:
+            gpu_count = 0
+        if gpu_count > 0:
+            return "vulkan:0", "ncnn(vulkan:0)"
+        return "cpu", "ncnn(cpu)"
+
+    @staticmethod
+    def ensure_ncnn_model(model_path: str) -> str:
+        ncnn_model_path = YoloDetector.resolve_ncnn_model_path(model_path)
+        if os.path.isdir(ncnn_model_path):
+            return ncnn_model_path
+
+        if not _YOLO_AVAILABLE:
+            raise ImportError("ultralytics 未安装，无法导出 NCNN 模型")
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"YOLO 模型未找到: {model_path}")
+
+        log.info_t("yolo.log.ncnnExportStart", model_path=model_path)
+        try:
+            exported = YOLO(model_path).export(format="ncnn", imgsz=640)
+        except Exception as e:
+            log.warning_t("yolo.log.ncnnExportFailed", error=e)
+            raise RuntimeError(f"NCNN 导出失败: {e}") from e
+
+        exported_path = str(exported) if exported is not None else ncnn_model_path
+        if os.path.isdir(exported_path):
+            ncnn_model_path = exported_path
+        if not os.path.isdir(ncnn_model_path):
+            raise FileNotFoundError(f"NCNN 模型目录未生成: {ncnn_model_path}")
+        log.info_t("yolo.log.ncnnExportDone", model_path=ncnn_model_path)
+        return ncnn_model_path
+
+    @staticmethod
+    def build_runtime(model_path: str, device="auto"):
         if not _YOLO_AVAILABLE:
             raise ImportError(
                 "ultralytics 未安装。请运行: pip install ultralytics"
             )
-        if not os.path.exists(model_path):
+        normalized_device = YoloDetector.normalize_device_preference(device)
+        ncnn_model_path = YoloDetector.resolve_ncnn_model_path(model_path)
+        if not os.path.exists(model_path) and not (
+            normalized_device == "ncnn" and os.path.isdir(ncnn_model_path)
+        ):
             raise FileNotFoundError(f"YOLO 模型未找到: {model_path}")
 
-        self.conf = conf
-        self.model = YOLO(model_path)
+        dev_pref = normalized_device
+        cuda_ok = YoloDetector.cuda_available()
 
-        dev_pref = self.normalize_device_preference(device)
-        cuda_ok = False
-        try:
-            import torch
-            cuda_ok = torch.cuda.is_available()
-        except Exception:
-            pass
-        target_dev, device_label = self.select_runtime_device(dev_pref, cuda_ok)
-        self._device_label = device_label
-
+        backend, target_dev, device_label = YoloDetector.select_runtime_device(
+            dev_pref,
+            cuda_ok,
+            ncnn_available=_NCNN_AVAILABLE,
+        )
         warmup_img = np.zeros((640, 640, 3), dtype=np.uint8)
 
+        if backend == "ncnn":
+            if not _NCNN_AVAILABLE:
+                raise RuntimeError(
+                    "NCNN 依赖未安装。请安装 requirements.txt 中的 ncnn / pnnx。"
+                )
+            ncnn_model_path = YoloDetector.ensure_ncnn_model(model_path)
+            model = YOLO(ncnn_model_path, task="detect")
+            runtime_device, runtime_label = YoloDetector.select_ncnn_runtime_device()
+            try:
+                model.predict(
+                    warmup_img, conf=0.5, device=runtime_device,
+                    verbose=False, imgsz=640,
+                )
+            except Exception as e:
+                if runtime_device != "cpu":
+                    log.warning_t("yolo.log.ncnnVulkanFallback", error=e)
+                    runtime_device = "cpu"
+                    runtime_label = "ncnn(cpu)"
+                    model.predict(
+                        warmup_img, conf=0.5, device=runtime_device,
+                        verbose=False, imgsz=640,
+                    )
+                else:
+                    raise RuntimeError(f"[YOLO] NCNN 初始化失败: {e}") from e
+            log.info_t("yolo.log.ncnnReady", device=runtime_label, names=model.names)
+            return {
+                "model": model,
+                "runtime_device": runtime_device,
+                "device_label": runtime_label,
+                "backend_label": "ncnn",
+                "model_path": ncnn_model_path,
+            }
+
+        model = YOLO(model_path)
         if target_dev != "cpu":
             try:
-                pass  # 静默加载
-                self.model.predict(
+                model.predict(
                     warmup_img, conf=0.5, device=target_dev,
                     verbose=False, imgsz=640,
                 )
-                self._device = target_dev
                 for _ in range(2):
-                    self.model.predict(
+                    model.predict(
                         warmup_img, conf=0.5, device=target_dev,
                         verbose=False, imgsz=640,
                     )
-                self._device = target_dev
-                pass  # GPU 预热完成
-                return
+                return {
+                    "model": model,
+                    "runtime_device": target_dev,
+                    "device_label": device_label,
+                    "backend_label": "torch",
+                    "model_path": model_path,
+                }
             except Exception as e:
                 if dev_pref == "cuda":
-                    raise RuntimeError(f"[YOLO] 强制 CUDA 模式但初始化失败: {e}")
+                    raise RuntimeError(f"[YOLO] 强制 CUDA 模式但初始化失败: {e}") from e
                 log.warning_t("yolo.log.gpuFallback", error=e)
 
-        self._device = "cpu"
-        self._device_label = "cpu"
-        pass  # 静默加载 CPU
-        self.model.predict(
+        model.predict(
             warmup_img, conf=0.5, device="cpu",
             verbose=False, imgsz=640,
         )
-        log.info_t("yolo.log.cpuReady", names=self.model.names)
+        log.info_t("yolo.log.cpuReady", names=model.names)
+        return {
+            "model": model,
+            "runtime_device": "cpu",
+            "device_label": "cpu",
+            "backend_label": "torch",
+            "model_path": model_path,
+        }
+
+    def __init__(self, model_path: str, conf: float = 0.5, device="auto"):
+        self.conf = conf
+        runtime = self.build_runtime(model_path, device=device)
+        self.model = runtime["model"]
+        self._device = runtime["runtime_device"]
+        self._device_label = runtime["device_label"]
+        self._backend_label = runtime["backend_label"]
+        self._model_path = runtime["model_path"]
 
     def detect(self, screen, roi=None):
         """

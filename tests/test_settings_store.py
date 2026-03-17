@@ -35,9 +35,11 @@ class SettingsStoreTests(unittest.TestCase):
         self.old_settings_file = config.SETTINGS_FILE
         self.old_language = config.LANGUAGE
         self.old_full_rate_wait_hook = config.FULL_RATE_WAIT_HOOK
+        self.old_yolo_device = config.YOLO_DEVICE
         config.SETTINGS_FILE = self.settings_file
         config.LANGUAGE = "zh-CN"
         config.FULL_RATE_WAIT_HOOK = False
+        config.YOLO_DEVICE = "auto"
         self.log_messages = []
         self.rebuild_calls = []
         self.app = SimpleNamespace(
@@ -54,6 +56,7 @@ class SettingsStoreTests(unittest.TestCase):
             },
             PERSISTED_CONFIG_ATTRS=(
                 "LANGUAGE",
+                "YOLO_DEVICE",
                 "SKIP_SUCCESS_CHECK",
                 "SYNC_PD_MODE",
                 "FULL_RATE_WAIT_HOOK",
@@ -61,6 +64,7 @@ class SettingsStoreTests(unittest.TestCase):
             var_grouped_params=FakeVar(True),
             var_preset_name=FakeVar(""),
             var_language=FakeVar("简体中文"),
+            var_yolo_device=FakeVar("auto"),
             var_skip_success=FakeVar(False),
             var_sync_pd_mode=FakeVar(True),
             var_anti_mode=FakeVar("jump"),
@@ -82,6 +86,7 @@ class SettingsStoreTests(unittest.TestCase):
         config.SETTINGS_FILE = self.old_settings_file
         config.LANGUAGE = self.old_language
         config.FULL_RATE_WAIT_HOOK = self.old_full_rate_wait_hook
+        config.YOLO_DEVICE = self.old_yolo_device
         set_language(self.old_language)
         config.HOLD_MIN_S = self.old_hold_min
         config.SUCCESS_PROGRESS = self.old_success_progress
@@ -141,8 +146,10 @@ class SettingsStoreTests(unittest.TestCase):
 
     def test_collect_settings_includes_language(self):
         config.LANGUAGE = "en-US"
+        config.YOLO_DEVICE = "ncnn"
         data = self.store.collect_settings_data()
         self.assertEqual(data["LANGUAGE"], "en-US")
+        self.assertEqual(data["YOLO_DEVICE"], "ncnn")
 
     def test_apply_loaded_whitelist_migrates_legacy_fish_keys(self):
         handled = self.store.apply_loaded_setting(
@@ -158,6 +165,12 @@ class SettingsStoreTests(unittest.TestCase):
         handled = self.store.apply_loaded_setting("YOLO_DEVICE", "gpu")
         self.assertTrue(handled)
         self.assertEqual(config.YOLO_DEVICE, "cuda")
+
+    def test_apply_loaded_setting_accepts_ncnn_device(self):
+        handled = self.store.apply_loaded_setting("YOLO_DEVICE", "ncnn")
+        self.assertTrue(handled)
+        self.assertEqual(config.YOLO_DEVICE, "ncnn")
+        self.assertEqual(self.app.var_yolo_device.get(), "ncnn")
 
     def test_apply_loaded_setting_updates_full_rate_wait_hook(self):
         handled = self.store.apply_loaded_setting("FULL_RATE_WAIT_HOOK", True)

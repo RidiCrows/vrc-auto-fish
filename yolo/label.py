@@ -16,6 +16,7 @@ import cv2
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config
+from core.yolo_detector import YoloDetector
 from yolo.classes import (
     CLASS_COLORS,
     CLASS_NAMES,
@@ -93,31 +94,32 @@ def normalize_class_name(class_name):
 
 
 def resolve_predict_device(device_name):
-    normalized = config.normalize_yolo_device(device_name)
-    if normalized == "cuda":
-        return 0
-    if normalized != "auto":
-        return normalized
-    try:
-        import torch
-        return 0 if torch.cuda.is_available() else "cpu"
-    except Exception:
-        return "cpu"
+    normalized = YoloDetector.normalize_device_preference(device_name)
+    if normalized == "ncnn":
+        return YoloDetector.select_ncnn_runtime_device()[0]
+    _backend, runtime_device, _label = YoloDetector.select_runtime_device(
+        normalized,
+        YoloDetector.cuda_available(),
+        ncnn_available=YoloDetector.ncnn_available(),
+    )
+    return runtime_device
 
 
 class AutoLabeler:
     def __init__(self, model_path, conf=0.25, device="auto", one_per_class=True):
-        try:
-            from ultralytics import YOLO
-        except ImportError as exc:
-            raise RuntimeError("缺少 ultralytics，无法启用自动打标") from exc
-
-        if not os.path.exists(model_path):
+        normalized_device = YoloDetector.normalize_device_preference(device)
+        ncnn_model_path = YoloDetector.resolve_ncnn_model_path(model_path)
+        if not os.path.exists(model_path) and not (
+            normalized_device == "ncnn" and os.path.isdir(ncnn_model_path)
+        ):
             raise FileNotFoundError(f"自动打标模型不存在: {model_path}")
 
-        self.model = YOLO(model_path)
+        runtime = YoloDetector.build_runtime(model_path, device=device)
+        self.model = runtime["model"]
         self.conf = conf
-        self.device = resolve_predict_device(device)
+        self.device = runtime["runtime_device"]
+        self.device_label = runtime["device_label"]
+        self.backend_label = runtime["backend_label"]
         self.one_per_class = one_per_class
 
     def predict_boxes(self, img):

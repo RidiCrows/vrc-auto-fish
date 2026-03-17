@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import config
 from gui.runtime_controller import AppRuntimeController
-from utils.i18n import t
+from utils.i18n import get_language, set_language, t
 
 
 class FakeButton:
@@ -50,6 +50,16 @@ class FakeVar:
 
 
 class RuntimeControllerTests(unittest.TestCase):
+    def setUp(self):
+        self._previous_language = get_language()
+        self._previous_yolo_device = config.YOLO_DEVICE
+        set_language("zh-CN")
+        config.YOLO_DEVICE = "auto"
+
+    def tearDown(self):
+        set_language(self._previous_language)
+        config.YOLO_DEVICE = self._previous_yolo_device
+
     def make_app(self):
         root = FakeRoot()
         logs = []
@@ -125,6 +135,18 @@ class RuntimeControllerTests(unittest.TestCase):
                 patch("os.path.isdir", return_value=False):
             controller.update_yolo_status()
         self.assertIn("模型", app.var_yolo_status.get())
+        self.assertIn("后端", app.var_yolo_status.get())
+
+    def test_update_yolo_status_uses_ncnn_status_when_selected(self):
+        app, _logs = self.make_app()
+        app.bot.yolo = SimpleNamespace(_device_label="ncnn(cpu)")
+        controller = AppRuntimeController(app)
+        config.YOLO_DEVICE = "ncnn"
+        with patch("os.path.exists", return_value=False), \
+                patch("os.path.isdir", return_value=True):
+            controller.update_yolo_status()
+        self.assertIn("NCNN", app.var_yolo_status.get())
+        self.assertIn("ncnn(cpu)", app.var_yolo_status.get())
 
     def test_fish_pairs_include_new_yolo_only_fish_classes(self):
         app, _logs = self.make_app()
