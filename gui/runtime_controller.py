@@ -437,19 +437,24 @@ class AppRuntimeController:
 
     def update_yolo_status(self):
         """更新 YOLO 状态显示。"""
+        def _count_images(folder):
+            if not os.path.isdir(folder):
+                return 0
+            try:
+                return len([
+                    f for f in os.listdir(folder)
+                    if f.endswith((".png", ".jpg"))
+                ])
+            except OSError:
+                return 0
+
         device_pref = config.normalize_yolo_device(config.YOLO_DEVICE)
         pt_model_ok = os.path.exists(config.YOLO_MODEL)
         ncnn_model_ok = os.path.isdir(config.YOLO_MODEL_NCNN)
         unlabeled = YOLO_UNLABELED
         train = YOLO_TRAIN_IMG
-        n_unlabeled = len([
-            f for f in os.listdir(unlabeled)
-            if f.endswith((".png", ".jpg"))
-        ]) if os.path.isdir(unlabeled) else 0
-        n_train = len([
-            f for f in os.listdir(train)
-            if f.endswith((".png", ".jpg"))
-        ]) if os.path.isdir(train) else 0
+        n_unlabeled = _count_images(unlabeled)
+        n_train = _count_images(train)
 
         if device_pref == "ncnn":
             model_part = (
