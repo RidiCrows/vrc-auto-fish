@@ -10,26 +10,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from trainer_common.collect import run_collect
-from trainer_common.profiles import get_profile, TrainerProfile
+from trainer_common.profiles import get_profile, TrainerProfile, CustomPathProfile
 from yolo.console import safe_print
-
-
-class CustomPathProfile:
-    """包装 TrainerProfile，支持自定义数据目录"""
-    def __init__(self, base_profile, custom_dataset_root=None):
-        self._base_profile = base_profile
-        self._custom_dataset_root = custom_dataset_root
-    
-    def __getattr__(self, name):
-        """代理所有属性访问到 base_profile"""
-        return getattr(self._base_profile, name)
-    
-    @property
-    def dataset_root(self) -> str:
-        """返回自定义的数据目录或默认值"""
-        if self._custom_dataset_root:
-            return self._custom_dataset_root
-        return self._base_profile.dataset_root
 
 
 def build_parser():
