@@ -689,6 +689,10 @@ class FishingApp:
         """弹窗: 勾选要钓的鱼种"""
         self.runtime.on_whitelist()
 
+    def _on_stats(self):
+        """弹窗: 显示色别釣果统计"""
+        self.runtime.on_stats()
+
     def _on_topmost(self):
         """切换窗口置顶 (用 int 0/1 确保兼容性)"""
         self.runtime.on_topmost()

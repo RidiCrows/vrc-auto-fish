@@ -7,6 +7,7 @@ GUI 运行时动作
 import os
 import threading
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk
 
 import cv2
@@ -37,6 +38,9 @@ class AppRuntimeController:
 
     def __init__(self, app):
         self.app = app
+        self._stats_win = None       # 统计窗口 (Toplevel | None)
+        self._stats_body = None      # 表格 Frame
+        self._stats_last_count = -1  # 上次更新时的 fish_count
 
     def tr(self, key: str, default: str | None = None, **kwargs):
         return t(key, default=default, **kwargs)
@@ -188,6 +192,233 @@ class AppRuntimeController:
         y = max((screen_h - final_h) // 2, 0)
         win.geometry(f"{final_w}x{final_h}+{x}+{y}")
 
+    BAR_COLORS = {
+        "fish_generic": "#a0a0a0",
+        "fish_black":   "#3a3a3a",
+        "fish_white":   "#e0e0e0",
+        "fish_copper":  "#b87333",
+        "fish_green":   "#4caf50",
+        "fish_teal":    "#009688",
+        "fish_blue":    "#2196f3",
+        "fish_purple":  "#9c27b0",
+        "fish_golden":  "#ffc107",
+        "fish_pink":    "#e91e8f",
+        "fish_red":     "#f44336",
+        "fish_rainbow": "#ff9800",
+    }
+
+    def _populate_stats_view(self, body):
+        """绘制横向条形图与表格合并的统一视图。"""
+        for child in body.winfo_children():
+            child.destroy()
+
+        # 列设置: 0=色块■ 1=鱼名 2=横条 3=成功 4=失败 5=合计
+        body.columnconfigure(0, weight=0)
+        body.columnconfigure(1, weight=1)
+        body.columnconfigure(2, weight=0)
+        for c in range(3, 6):
+            body.columnconfigure(c, weight=0)
+
+        stats = self.app.bot.fish_stats
+        pairs = self._fish_pairs()
+
+        # 从 TkDefaultFont 创建粗体副本
+        default_font = tkfont.nametofont("TkDefaultFont")
+        bold_font = default_font.copy()
+        bold_font.config(weight="bold")
+
+        hdr_pad = {"padx": 6, "pady": 2}
+        success_label = self.tr("runtime.statsSuccess")
+        fail_label = self.tr("runtime.statsFail")
+        count_label = self.tr("runtime.statsCount")
+
+        row = 0
+
+        # Row 0: 图例
+        legend_frame = ttk.Frame(body)
+        legend_frame.grid(row=row, column=0, columnspan=6, sticky="w",
+                          padx=6, pady=(0, 4))
+        legend_success = tk.Canvas(legend_frame, width=14, height=14,
+                                   highlightthickness=0)
+        legend_success.pack(side="left", padx=(0, 2))
+        legend_success.create_rectangle(0, 0, 14, 14, fill="#4caf50",
+                                        outline="#4caf50")
+        ttk.Label(legend_frame, text=success_label).pack(side="left",
+                                                         padx=(0, 12))
+        legend_fail = tk.Canvas(legend_frame, width=14, height=14,
+                                highlightthickness=0)
+        legend_fail.pack(side="left", padx=(0, 2))
+        legend_fail.create_rectangle(0, 0, 14, 14, fill="#4caf50",
+                                     outline="#4caf50", stipple="gray50")
+        ttk.Label(legend_frame, text=fail_label).pack(side="left")
+        row += 1
+
+        # Row 1: 表头
+        ttk.Label(body, text="", anchor="w").grid(
+            row=row, column=0, sticky="w", **hdr_pad)
+        ttk.Label(body, text="", anchor="w").grid(
+            row=row, column=1, sticky="w", **hdr_pad)
+        ttk.Label(body, text="", anchor="w").grid(
+            row=row, column=2, sticky="w", **hdr_pad)
+        ttk.Label(body, text=success_label, anchor="e", font=bold_font).grid(
+            row=row, column=3, sticky="e", **hdr_pad)
+        ttk.Label(body, text=fail_label, anchor="e", font=bold_font).grid(
+            row=row, column=4, sticky="e", **hdr_pad)
+        ttk.Label(body, text=count_label, anchor="e", font=bold_font).grid(
+            row=row, column=5, sticky="e", **hdr_pad)
+        row += 1
+
+        # 求最大值用于缩放计算
+        max_val = 0
+        for key, _ in pairs:
+            entry = stats.get(key, {})
+            total = entry.get("success", 0) + entry.get("fail", 0)
+            if total > max_val:
+                max_val = total
+        if max_val == 0:
+            max_val = 1
+
+        bar_canvas_w = 160
+        bar_canvas_h = 18
+        bar_h = 14
+        bar_y0 = (bar_canvas_h - bar_h) // 2
+        bar_y1 = bar_y0 + bar_h
+
+        total_success = 0
+        total_fail = 0
+
+        # Row 2–13: 数据行
+        for key, display_name in pairs:
+            entry = stats.get(key, {})
+            s = entry.get("success", 0)
+            f = entry.get("fail", 0)
+            total = s + f
+            total_success += s
+            total_fail += f
+            bar_color = self.BAR_COLORS.get(key, "#a0a0a0")
+
+            # 色块
+            swatch = tk.Canvas(body, width=14, height=14, highlightthickness=0)
+            swatch.create_rectangle(0, 0, 14, 14, fill=bar_color,
+                                    outline=bar_color)
+            swatch.grid(row=row, column=0, sticky="w", padx=(6, 2), pady=2)
+
+            # 鱼名
+            ttk.Label(body, text=display_name, anchor="w").grid(
+                row=row, column=1, sticky="w", **hdr_pad)
+
+            # 横条
+            bar_cv = tk.Canvas(body, width=bar_canvas_w, height=bar_canvas_h,
+                               highlightthickness=0, bg="#f5f5f5")
+            bar_cv.grid(row=row, column=2, sticky="w", padx=4, pady=2)
+
+            if total > 0:
+                s_w = int(bar_canvas_w * s / max_val)
+                f_w = int(bar_canvas_w * f / max_val)
+                if s > 0:
+                    bar_cv.create_rectangle(0, bar_y0, s_w, bar_y1,
+                                            fill=bar_color, outline=bar_color)
+                if f > 0:
+                    bar_cv.create_rectangle(s_w, bar_y0, s_w + f_w, bar_y1,
+                                            fill=bar_color, outline=bar_color,
+                                            stipple="gray50")
+
+            # 成功/失败/合计
+            ttk.Label(body, text=str(s), anchor="e").grid(
+                row=row, column=3, sticky="e", **hdr_pad)
+            ttk.Label(body, text=str(f), anchor="e").grid(
+                row=row, column=4, sticky="e", **hdr_pad)
+            ttk.Label(body, text=str(total), anchor="e").grid(
+                row=row, column=5, sticky="e", **hdr_pad)
+            row += 1
+
+        # 分隔线
+        sep = ttk.Separator(body, orient="horizontal")
+        sep.grid(row=row, column=0, columnspan=6, sticky="ew", padx=6, pady=4)
+        row += 1
+
+        # 合计行
+        ttk.Label(body, text="", anchor="w").grid(
+            row=row, column=0, sticky="w", **hdr_pad)
+        ttk.Label(body, text=self.tr("runtime.statsTotal"), anchor="w",
+                  font=bold_font).grid(row=row, column=1, sticky="w", **hdr_pad)
+        ttk.Label(body, text="", anchor="w").grid(
+            row=row, column=2, sticky="w", **hdr_pad)
+        ttk.Label(body, text=str(total_success), anchor="e",
+                  font=bold_font).grid(row=row, column=3, sticky="e", **hdr_pad)
+        ttk.Label(body, text=str(total_fail), anchor="e",
+                  font=bold_font).grid(row=row, column=4, sticky="e", **hdr_pad)
+        ttk.Label(body, text=str(total_success + total_fail), anchor="e",
+                  font=bold_font).grid(row=row, column=5, sticky="e", **hdr_pad)
+
+        # 跳过注释（条件性）
+        if config.SKIP_SUCCESS_CHECK:
+            row += 1
+            ttk.Label(body, text=self.tr("runtime.statsSkipNote"),
+                      foreground="gray").grid(
+                row=row, column=0, columnspan=6, sticky="w",
+                padx=6, pady=(4, 0))
+
+    def _refresh_stats_dialog(self):
+        """若统计窗口已打开，则重绘视图。"""
+        if self._stats_win is None:
+            return
+        try:
+            if not self._stats_win.winfo_exists():
+                self._stats_win = None
+                return
+        except tk.TclError:
+            self._stats_win = None
+            return
+        self._populate_stats_view(self._stats_body)
+
+    def on_stats(self):
+        # 若已打开则仅聚焦
+        if self._stats_win is not None:
+            try:
+                if self._stats_win.winfo_exists():
+                    self._stats_win.lift()
+                    self._stats_win.focus_force()
+                    return
+            except tk.TclError:
+                pass
+            self._stats_win = None
+
+        win = tk.Toplevel(self.app.root)
+        win.title(self.tr("runtime.statsTitle"))
+        win.resizable(False, False)
+        win.transient(self.app.root)
+
+        def _on_close_stats():
+            self._stats_win = None
+            self._stats_body = None
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _on_close_stats)
+
+        # ── 统一视图 ──
+        body = ttk.Frame(win)
+        body.pack(fill="both", expand=True, padx=12, pady=(10, 6))
+        self._populate_stats_view(body)
+
+        ttk.Button(win, text=self.tr("runtime.confirm"), command=_on_close_stats).pack(pady=10)
+
+        # 保持引用
+        self._stats_win = win
+        self._stats_body = body
+        self._stats_last_count = self.app.bot.fish_count
+
+        win.update_idletasks()
+        req_w = max(win.winfo_reqwidth() + 20, 520)
+        req_h = max(win.winfo_reqheight() + 10, 460)
+        screen_w = win.winfo_screenwidth()
+        screen_h = win.winfo_screenheight()
+        final_w = min(req_w, screen_w - 80)
+        final_h = min(req_h, screen_h - 80)
+        x = max((screen_w - final_w) // 2, 0)
+        y = max((screen_h - final_h) // 2, 0)
+        win.geometry(f"{final_w}x{final_h}+{x}+{y}")
+
     def on_topmost(self):
         topmost = self.app.var_topmost.get()
         self.app.root.wm_attributes("-topmost", 1 if topmost else 0)
@@ -272,7 +503,11 @@ class AppRuntimeController:
             pass
 
         self.app.var_state.set(self.app._translate_bot_state(self.app.bot.state))
-        self.app.var_count.set(str(self.app.bot.fish_count))
+        current_count = self.app.bot.fish_count
+        self.app.var_count.set(str(current_count))
+        if current_count != self._stats_last_count:
+            self._stats_last_count = current_count
+            self._refresh_stats_dialog()
         self.app.var_debug.set(
             self.tr("status.on") if self.app.bot.debug_mode else self.tr("status.off")
         )

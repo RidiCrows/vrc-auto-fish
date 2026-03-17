@@ -90,6 +90,7 @@ class FishingBot:
         self.running    = False
         self.debug_mode = False
         self.fish_count = 0
+        self.fish_stats = {}          # {fish_key: count} 色別釣果
         self.state      = "bot.state.ready"
 
         # ── PD 控制器 ──
@@ -1107,6 +1108,9 @@ class FishingBot:
                     continue
 
                 self.fish_count += 1
+                fish_key = self._current_fish_name or "fish_generic"
+                entry = self.fish_stats.setdefault(fish_key, {"success": 0, "fail": 0})
+                entry["success" if result else "fail"] += 1
                 tag = t("bot.result.success") if result else t("bot.result.complete")
                 log.info_t("bot.log.result", count=self.fish_count, tag=tag)
                 log.info_t("bot.log.separator")
