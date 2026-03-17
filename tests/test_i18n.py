@@ -53,13 +53,35 @@ class I18nTests(unittest.TestCase):
 
     def test_fish_teal_name_is_available_in_all_languages(self):
         set_language("zh-CN")
-        self.assertEqual(fish_name("fish_teal"), "青绿色鱼")
+        self.assertEqual(fish_name("fish_teal"), "四叶草")
 
         set_language("en-US")
-        self.assertEqual(fish_name("fish_teal"), "Teal Fish")
+        self.assertEqual(fish_name("fish_teal"), "Clover")
 
         set_language("ja-JP")
-        self.assertEqual(fish_name("fish_teal"), "青緑魚")
+        self.assertEqual(fish_name("fish_teal"), "クローバー")
+
+    def test_renamed_fish_names_are_available_in_all_languages(self):
+        set_language("zh-CN")
+        self.assertEqual(fish_name("fish_green"), "绿鱼")
+        self.assertEqual(fish_name("fish_clover"), "四叶草")
+        self.assertEqual(fish_name("fish_relic"), "遗物")
+        self.assertEqual(fish_name("fish_black"), "黑鱼")
+        self.assertEqual(fish_name("fish_question"), "问号鱼")
+
+        set_language("en-US")
+        self.assertEqual(fish_name("fish_green"), "Green Fish")
+        self.assertEqual(fish_name("fish_clover"), "Clover")
+        self.assertEqual(fish_name("fish_relic"), "Relic")
+        self.assertEqual(fish_name("fish_black"), "Black Fish")
+        self.assertEqual(fish_name("fish_question"), "Question Fish")
+
+        set_language("ja-JP")
+        self.assertEqual(fish_name("fish_green"), "緑魚")
+        self.assertEqual(fish_name("fish_clover"), "クローバー")
+        self.assertEqual(fish_name("fish_relic"), "遺物")
+        self.assertEqual(fish_name("fish_black"), "黒魚")
+        self.assertEqual(fish_name("fish_question"), "はてな魚")
 
 
 if __name__ == "__main__":

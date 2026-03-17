@@ -1,13 +1,13 @@
 """
 多颜色鱼类别定义
 ================
-保留 `fish_generic` 以兼容旧的单类 fish 标注。
+类别 0 现为 `fish_black`，同时兼容旧的 `fish` / `fish_generic` 标注。
 """
 
 CLASS_NAMES = {
-    0: "fish_generic",
+    0: "fish_black",
     1: "fish_white",
-    2: "fish_copper",
+    2: "fish_relic",
     3: "fish_green",
     4: "fish_blue",
     5: "fish_purple",
@@ -18,11 +18,12 @@ CLASS_NAMES = {
     10: "bar",
     11: "track",
     12: "progress",
-    13: "fish_teal",
+    13: "fish_clover",
+    14: "fish_question",
 }
 
 CLASS_COLORS = {
-    0: (0, 255, 0),
+    0: (80, 80, 80),
     1: (255, 255, 255),
     2: (60, 140, 200),
     3: (0, 220, 0),
@@ -36,12 +37,13 @@ CLASS_COLORS = {
     11: (255, 100, 0),
     12: (0, 200, 255),
     13: (200, 220, 0),
+    14: (80, 255, 255),
 }
 
 DISPLAY_NAMES = {
-    0: "通用鱼",
+    0: "黑鱼",
     1: "白鱼",
-    2: "铜鱼",
+    2: "遗物",
     3: "绿鱼",
     4: "蓝鱼",
     5: "紫鱼",
@@ -52,13 +54,14 @@ DISPLAY_NAMES = {
     10: "白条",
     11: "轨道",
     12: "进度条",
-    13: "青绿色鱼",
+    13: "四叶草",
+    14: "问号鱼",
 }
 
 OVERLAY_NAMES = {
-    0: "fish_generic",
+    0: "fish_black",
     1: "fish_white",
-    2: "fish_copper",
+    2: "fish_relic",
     3: "fish_green",
     4: "fish_blue",
     5: "fish_purple",
@@ -69,7 +72,8 @@ OVERLAY_NAMES = {
     10: "bar",
     11: "track",
     12: "progress",
-    13: "fish_teal",
+    13: "fish_clover",
+    14: "fish_question",
 }
 
 KEY_TO_CLASS = {
@@ -87,6 +91,7 @@ KEY_TO_CLASS = {
     ord("t"): 11,
     ord("p"): 12,
     ord("0"): 13,
+    ord("/"): 14,
 }
 
 CLASS_SHORTCUTS = {
@@ -104,6 +109,7 @@ CLASS_SHORTCUTS = {
     11: "T",
     12: "P",
     13: "0",
+    14: "?",
 }
 
 

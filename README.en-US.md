@@ -146,7 +146,7 @@ Notes:
 - `--auto-predict` must be used together with `--predict-model`
 - Press `A` inside the labeler to auto-label the current image once
 - `yolo.label` supports right-click box selection, left-drag overwrite, `J` for previous image, `Ctrl+D` to delete the current image, `[` / `]` to resize the selected box, and `,` `.` `;` `'` for box nudging
-- The current `yolo` labeler includes runtime-specific classes such as `progress`, `prog_hook`, and the newly appended `fish_teal` on key `0`
+- The current `yolo` labeler includes runtime-specific classes such as `progress`, `prog_hook`, and the newly appended `fish_clover` on key `0`
 
 ### `fish_trainer/`: standalone multi-color pipeline
 
@@ -168,7 +168,7 @@ For class definitions, hotkeys, migration details, and GUI usage, see [`fish_tra
 
 ### Current class caveat
 
-- The labelers already support `fish_teal`
+- The labelers already support `fish_clover`
 - `yolo.label` also supports `prog_hook`
 - Training YAML files may not yet declare every newly added labeling class; this documentation describes the current tool behavior and does not overstate training-yaml coverage
 

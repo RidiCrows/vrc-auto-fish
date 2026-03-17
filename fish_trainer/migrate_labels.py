@@ -17,7 +17,7 @@ from fish_trainer.paths import TRAIN_IMG, TRAIN_LBL, UNLABELED, VAL_IMG, VAL_LBL
 
 LEGACY_DATASET = os.path.join(config.BASE_DIR, "yolo", "dataset")
 OLD_TO_NEW_CLASS = {
-    0: 0,    # fish -> fish_generic
+    0: 0,    # fish -> fish_black
     1: 10,   # bar
     2: 11,   # track
     3: 12,   # progress
@@ -124,7 +124,7 @@ def main():
     safe_print(f"  val:   图片 {val_stats['images']} 张, 标签 {val_stats['labels']} 个, 跳过 {val_stats['skipped']}")
     if args.with_unlabeled:
         safe_print(f"  unlabeled: 复制 {unlabeled_count} 张")
-    safe_print("  旧类别映射: fish->fish_generic, bar->bar, track->track, progress->progress")
+    safe_print("  旧类别映射: fish->fish_black, bar->bar, track->track, progress->progress")
 
 
 if __name__ == "__main__":

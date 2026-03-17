@@ -71,6 +71,7 @@ HOOK_POST_DELAY     = 0.4         # 提竿后等待 UI 出现 (★ 0.3→0.4)
 VERIFY_FRAMES       = 5           # 主循环连续丢失达到 N 帧后直接判定结束
 GAME_LOOP_INTERVAL  = 0.005       # 小游戏循环间隔 (60FPS游戏, 尽量快)
 CAPTURE_FPS_LIMIT   = 0           # 截图线程最大帧率上限 (0=不限制, 更接近旧版同步手感)
+FULL_RATE_WAIT_HOOK = False       # True=等待提竿阶段也不做 50ms 节流, 尽量满帧检测
 SYNC_PD_MODE       = False        # True=旧版模式(使用旧版参数), False=异步流水线模式
 SHOW_DEBUG             = True     # 是否显示debug窗口 (关闭可提升性能)
 DEBUG_OVERLAY_INTERVAL = 0.033    # debug窗口最小刷新间隔(秒) ~30FPS
@@ -136,10 +137,11 @@ DETECT_ROI        = None           # 玩家框选的检测区域 [x, y, w, h], N
 # ═══════════════════════════════════════════════════════════
 USE_YOLO      = True
 YOLO_MODEL    = resolve_resource_path("yolo/runs/fish_detect/weights/best.pt")
-YOLO_CONF     = 0.45              # YOLO 检测置信度阈值
+YOLO_CONF     = 0.30              # YOLO 检测置信度阈值
+YOLO_RAW_DEBUG = True             # True=打印排查用 YOLO 原始检测日志（会刷屏）
 YOLO_FISH_STABLE_FRAMES = 3       # 鱼类别需连续命中N帧才切换，抑制颜色抖动
 YOLO_WHITELIST_CONFIRM_FRAMES = 6 # 非白名单鱼需连续命中N帧才放弃，避免单帧误判
-YOLO_DEVICE   = "auto"            # "auto" 优先GPU / "cpu" 强制CPU / "gpu" 强制GPU
+YOLO_DEVICE   = "auto"            # "auto" 自动选择 / "cpu" 强制 CPU / "cuda" 强制 CUDA
 YOLO_COLLECT  = False             # True=钓鱼时自动保存截图用于训练
 TRACK_MIN_ANGLE   = 3.0           # 轨道倾斜角度阈值(度), 超过此值启用旋转补偿
 TRACK_MAX_ANGLE   = 45.0          # 轨道最大合理角度(度), 超过视为误检(如把海平线当轨道)
@@ -163,7 +165,7 @@ TEMPLATE_FILES = {
     "fish_white":   "wFish.png",
     "fish_green":   "greenFish.png",
     "fish_golden":  "goldenFish.png",
-    "fish_copper":  "copperFish.png",
+    "fish_relic":   "copperFish.png",
     "fish_blue":    "blueFish.png",
     "fish_purple":  "purpleFish.png",
     "fish_black":   "blackFish.png",
@@ -174,7 +176,7 @@ TEMPLATE_FILES = {
 # 所有鱼模板 key 列表（find_fish 使用）
 FISH_KEYS = [
     "fish_white", "fish_green", "fish_golden",
-    "fish_copper", "fish_teal", "fish_blue", "fish_purple", "fish_black",
+    "fish_relic", "fish_blue", "fish_purple", "fish_black",
     "fish_pink", "fish_red", "fish_rainbow",
 ]
 
@@ -182,15 +184,35 @@ FISH_KEYS = [
 #  钓鱼白名单 (True=要钓, False=放弃)
 # ═══════════════════════════════════════════════════════════
 FISH_WHITELIST = {
-    "fish_generic": True,   # 通用鱼 / 旧模型 fish
     "fish_black":   True,   # 黑鱼
     "fish_white":   True,   # 白鱼
-    "fish_copper":  True,   # 铜鱼
+    "fish_relic":   True,   # 遗物
     "fish_green":   True,   # 绿鱼
-    "fish_teal":    True,   # 青绿色鱼
+    "fish_clover":  True,   # 四叶草
+    "fish_question": True,  # 问号鱼
     "fish_blue":    True,   # 蓝鱼
     "fish_purple":  True,   # 紫鱼
     "fish_pink":    True,   # 粉鱼
     "fish_red":     True,   # 红鱼
     "fish_rainbow": True,   # 彩鱼
 }
+
+# 兼容旧设置和旧模型里仍然使用的鱼类 key。
+LEGACY_FISH_KEY_ALIASES = {
+    "fish_generic": "fish_black",
+    "fish_copper": "fish_relic",
+    "fish_teal": "fish_clover",
+}
+
+YOLO_DEVICE_ALIASES = {
+    "gpu": "cuda",
+}
+
+
+def normalize_yolo_device(device: str | None) -> str:
+    if not isinstance(device, str):
+        return "auto"
+    normalized = YOLO_DEVICE_ALIASES.get(device.lower(), device.lower())
+    if normalized in ("auto", "cpu", "cuda"):
+        return normalized
+    return "auto"

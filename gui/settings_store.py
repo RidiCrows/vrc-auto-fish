@@ -110,6 +110,8 @@ class AppSettingsStore:
             self.app.var_anti_mode.set(config.ANTI_STUCK_MODE)
         if hasattr(self.app, "var_shake_time"):
             self.app.var_shake_time.set(f"{config.SHAKE_HEAD_TIME:.3f}")
+        if hasattr(self.app, "var_full_rate_wait_hook"):
+            self.app.var_full_rate_wait_hook.set(config.FULL_RATE_WAIT_HOOK)
         self.app._update_success_threshold_state()
 
     def get_active_preset_name(self) -> str:
@@ -215,10 +217,17 @@ class AppSettingsStore:
             return True
 
         if attr == "YOLO_DEVICE":
-            if val in ("auto", "cpu", "gpu"):
-                self.apply_choice_setting("YOLO_DEVICE", val)
+            normalized = config.normalize_yolo_device(str(val))
+            if normalized in ("auto", "cpu", "cuda"):
+                self.apply_choice_setting("YOLO_DEVICE", normalized)
                 if hasattr(self.app, "var_yolo_device"):
-                    self.app.var_yolo_device.set(val)
+                    self.app.var_yolo_device.set(normalized)
+            return True
+
+        if attr == "FULL_RATE_WAIT_HOOK":
+            self.apply_bool_setting("FULL_RATE_WAIT_HOOK", bool(val))
+            if hasattr(self.app, "var_full_rate_wait_hook"):
+                self.app.var_full_rate_wait_hook.set(config.FULL_RATE_WAIT_HOOK)
             return True
 
         if attr == "SHOW_DEBUG":
@@ -229,7 +238,11 @@ class AppSettingsStore:
 
         if attr == "FISH_WHITELIST":
             if isinstance(val, dict):
-                config.FISH_WHITELIST.update(val)
+                migrated = {}
+                for key, enabled in val.items():
+                    new_key = config.LEGACY_FISH_KEY_ALIASES.get(key, key)
+                    migrated[new_key] = enabled
+                config.FISH_WHITELIST.update(migrated)
             return True
 
         if attr == "SKIP_SUCCESS_CHECK":

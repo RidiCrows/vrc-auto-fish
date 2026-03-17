@@ -8,7 +8,7 @@
 
 - 维护独立的 `multicolor` 数据链路，不直接覆盖主程序运行时的 `yolo/` 数据
 - 支持采集、手工标注、补标、迁移旧数据、训练、导出和 GUI 管理
-- 保留 `fish_generic`，兼容旧 `fish` 单类标注
+- 以 `fish_black` 作为 0 号类，同时兼容旧 `fish` / `fish_generic` 单类标注
 
 ## 数据目录结构
 
@@ -37,9 +37,9 @@ collect -> images/unlabeled -> label -> train/val -> train -> runs/fish_multicla
 
 ## 类别与快捷键
 
-- `fish_generic`
+- `fish_black`
 - `fish_white`
-- `fish_copper`
+- `fish_relic`
 - `fish_green`
 - `fish_blue`
 - `fish_purple`
@@ -50,14 +50,15 @@ collect -> images/unlabeled -> label -> train/val -> train -> runs/fish_multicla
 - `bar`
 - `track`
 - `progress`
-- `fish_teal`
+- `fish_clover`
 
-- `F`: 通用鱼
-- `1-9`: 白 / 铜 / 绿 / 蓝 / 紫 / 金 / 红 / 粉 / 彩
+- `F`: 黑鱼
+- `?`: `fish_question`
+- `1-9`: 白 / 遗物 / 绿 / 蓝 / 紫 / 金 / 红 / 粉 / 彩
 - `B`: `bar`
 - `T`: `track`
 - `P`: `progress`
-- `0`: `fish_teal`
+- `0`: `fish_clover`
 - `N` / `M`: 下一个 / 上一个类别
 - `Z`: 撤销
 - `X`: 清空当前图片全部标注
@@ -125,7 +126,7 @@ python -m fish_trainer.migrate_labels --source D:\old\yolo\dataset --overwrite
 
 当前默认映射：
 
-- `fish -> fish_generic`
+- `fish -> fish_black`
 - `bar -> bar`
 - `track -> track`
 - `progress -> progress`
@@ -165,7 +166,7 @@ GUI 里可以：
 - 导出已标注图片和标签 zip
 - 打开数据目录
 
-## 关于 `fish_teal` 的说明
+## 关于 `fish_clover` 的说明
 
-当前标注器已经支持 `fish_teal`，快捷键是 `0`。但训练配置文件 `fish_trainer/dataset/data_multiclass.yaml` 是否已同步声明该类，需要你在开始正式训练前再核对一次；本文档优先描述当前工具实际支持的标注能力。
+当前标注器已经支持 `fish_clover`，快捷键是 `0`。旧名称 `fish_teal` 会兼容映射到 `fish_clover`。但训练配置文件 `fish_trainer/dataset/data_multiclass.yaml` 是否已同步声明该类，需要你在开始正式训练前再核对一次；本文档优先描述当前工具实际支持的标注能力。
 

@@ -49,9 +49,10 @@ collect -> label -> train
 
 現在のクラスと既定ショートカット:
 
-- `F`: `fish_generic`
+- `F`: `fish_black`
+- `?`: `fish_question`
 - `1`: `fish_white`
-- `2`: `fish_copper`
+- `2`: `fish_relic`
 - `3`: `fish_green`
 - `4`: `fish_blue`
 - `5`: `fish_purple`
@@ -59,7 +60,7 @@ collect -> label -> train
 - `7`: `fish_red`
 - `8`: `fish_pink`
 - `9`: `fish_rainbow`
-- `0`: `fish_teal`
+- `0`: `fish_clover`
 - `B`: `bar`
 - `T`: `track`
 - `P`: `progress`
@@ -136,7 +137,7 @@ python -m fish_trainer.migrate_labels --source some\old\dataset --overwrite
 
 既定クラスマッピング:
 
-- `fish -> fish_generic`
+- `fish -> fish_black`
 - `bar -> bar`
 - `track -> track`
 - `progress -> progress`
@@ -170,8 +171,9 @@ python -m fish_trainer.gui
 
 GUI では収集、ラベル付け、再ラベル付け、移行、学習、データセット出力をボタンから実行できます。
 
-## `fish_teal` について
+## `fish_clover` について
 
-- ラベラーはすでにキー `0` の `fish_teal` をサポートしています
-- 学習 YAML が `fish_teal` を宣言しているかは、同期されているデータセット設定に依存します
+- ラベラーはすでにキー `0` の `fish_clover` をサポートしています
+- 旧名称 `fish_teal` は `fish_clover` への互換エイリアスとして扱われます
+- 学習 YAML が `fish_clover` を宣言しているかは、同期されているデータセット設定に依存します
 - ラベラーの挙動と学習 YAML の宣言は関連していますが、自動的に完全一致するとは限りません

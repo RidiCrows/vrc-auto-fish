@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import queue
 
 import config
+from utils.logger import log
 
 
 @dataclass
@@ -44,6 +45,46 @@ class MinigameDetectionService:
         self.pd = pd_controller
         self._get_yolo = yolo_getter
         self._get_bar_locked_cx = bar_locked_cx_getter
+
+    @staticmethod
+    def _format_raw_candidate_list(entries, *, fish_only=False):
+        parts = []
+        for class_name, det in entries:
+            if fish_only:
+                normalized = class_name
+                if class_name == "fish":
+                    normalized = "fish_black"
+                normalized = config.LEGACY_FISH_KEY_ALIASES.get(normalized, normalized)
+                if not normalized.startswith("fish_"):
+                    continue
+                class_name = normalized
+            parts.append(f"{class_name}@{det[4]:.2f}")
+        return ", ".join(parts) if parts else "-"
+
+    def _log_yolo_raw(self, frame_no: int, det: dict):
+        if not getattr(config, "YOLO_RAW_DEBUG", False):
+            return
+
+        fish = det.get("fish")
+        bar = det.get("bar")
+        track = det.get("track")
+        progress = det.get("progress")
+        prog_hook = det.get("prog_hook")
+        fish_name = det.get("fish_name") or "-"
+        raw = det.get("raw") or []
+        fish_candidates = self._format_raw_candidate_list(raw, fish_only=True)
+        all_candidates = self._format_raw_candidate_list(raw, fish_only=False)
+        fish_conf = f"{fish[4]:.2f}" if fish is not None else "-"
+        bar_conf = f"{bar[4]:.2f}" if bar is not None else "-"
+        track_conf = f"{track[4]:.2f}" if track is not None else "-"
+        progress_conf = f"{progress[4]:.2f}" if progress is not None else "-"
+        hook_conf = f"{prog_hook[4]:.2f}" if prog_hook is not None else "-"
+        log.info(
+            f"[YOLO RAW] F{frame_no:04d} "
+            f"fish={fish_name}@{fish_conf} "
+            f"bar={bar_conf} track={track_conf} progress={progress_conf} hook={hook_conf} "
+            f"fish_all=[{fish_candidates}] raw=[{all_candidates}]"
+        )
 
     def detect_worker_loop(self, frame_q: queue.Queue,
                            result_q: queue.Queue,
@@ -114,6 +155,7 @@ class MinigameDetectionService:
             yolo = self._get_yolo()
             if yolo is not None:
                 det = yolo.detect(scr, roi=yolo_roi)
+                self._log_yolo_raw(frame_no, det)
                 fish = det.get("fish")
                 bar = det.get("bar")
                 prog_hook = det.get("prog_hook")

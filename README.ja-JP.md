@@ -146,7 +146,7 @@ python -m yolo.label --relabel --predict-model yolo\runs\fish_detect\weights\bes
 - `--auto-predict` は `--predict-model` と一緒に使う必要があります
 - ラベラー内で `A` を押すと、現在の画像に対して 1 回だけ自動打標できます
 - `yolo.label` は右クリック選択、左ドラッグ上書き、`J` で前画像、`Ctrl+D` で現在画像削除、`[` / `]` で選択ボックス拡縮、`,` `.` `;` `'` で微調整に対応しています
-- 現在の `yolo` ラベラーには `progress`、`prog_hook`、そしてキー `0` に割り当てられた新しい `fish_teal` が含まれます
+- 現在の `yolo` ラベラーには `progress`、`prog_hook`、そしてキー `0` に割り当てられた新しい `fish_clover` が含まれます
 
 ### `fish_trainer/`: 独立多色魚パイプライン
 
@@ -168,7 +168,7 @@ python -m fish_trainer.gui
 
 ### 現在のクラスに関する注意
 
-- ラベラーはすでに `fish_teal` をサポートしています
+- ラベラーはすでに `fish_clover` をサポートしています
 - `yolo.label` はさらに `prog_hook` もサポートしています
 - 学習 YAML が新しく追加された全ラベルクラスをまだ宣言していない可能性があるため、この README では現在のツール挙動を記述し、学習 YAML 側の完全同期までは断定しません
 

@@ -73,10 +73,12 @@ def build_toggle_panel(app, parent, pad):
     ).pack(side="left", padx=4)
 
     app.var_show_debug = tk.BooleanVar(value=config.SHOW_DEBUG)
-    ttk.Checkbutton(
+    chk_debug = ttk.Checkbutton(
         frm_toggles, text=app.tr("toggle.debugWindow"),
         variable=app.var_show_debug, command=app._on_debug_toggle
-    ).pack(side="left", padx=4)
+    )
+    chk_debug.pack(side="left", padx=4)
+    app._create_tooltip(chk_debug, app.tr("tooltip.debugWindow"))
 
     app.var_skip_success = tk.BooleanVar(
         value=getattr(config, "SKIP_SUCCESS_CHECK", False)
@@ -127,13 +129,21 @@ def build_yolo_panel(app, parent, pad):
     ).pack(side="left", padx=4)
 
     ttk.Label(frm_yolo, text=app.tr("yolo.device")).pack(side="left", padx=(8, 2))
-    app.var_yolo_device = tk.StringVar(value=config.YOLO_DEVICE)
+    app.var_yolo_device = tk.StringVar(value=config.normalize_yolo_device(config.YOLO_DEVICE))
     cmb_dev = ttk.Combobox(
         frm_yolo, textvariable=app.var_yolo_device,
-        values=["auto", "cpu", "gpu"], state="readonly", width=5
+        values=["auto", "cpu", "cuda"], state="readonly", width=5
     )
     cmb_dev.pack(side="left", padx=2)
     cmb_dev.bind("<<ComboboxSelected>>", app._on_yolo_device_change)
+
+    app.var_full_rate_wait_hook = tk.BooleanVar(value=config.FULL_RATE_WAIT_HOOK)
+    ttk.Checkbutton(
+        frm_yolo,
+        text=app.tr("yolo.fullRateWaitHook"),
+        variable=app.var_full_rate_wait_hook,
+        command=app._on_full_rate_wait_hook_toggle,
+    ).pack(side="left", padx=(8, 4))
 
     app.var_yolo_status = tk.StringVar(value="")
     app._update_yolo_status()

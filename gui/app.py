@@ -115,6 +115,7 @@ SETTINGS_DEFAULTS = {
     "SYNC_PD_MODE": False,
     "ANTI_STUCK_MODE": "jump",
     "SHAKE_HEAD_TIME": 0.02,
+    "FULL_RATE_WAIT_HOOK": False,
 }
 
 PERSISTED_CONFIG_ATTRS = (
@@ -128,6 +129,7 @@ PERSISTED_CONFIG_ATTRS = (
     "SYNC_PD_MODE",
     "ANTI_STUCK_MODE",
     "SHAKE_HEAD_TIME",
+    "FULL_RATE_WAIT_HOOK",
 )
 
 
@@ -815,12 +817,22 @@ class FishingApp:
 
     def _on_yolo_device_change(self, _event=None):
         """切换 YOLO 推理设备"""
-        dev = self.var_yolo_device.get()
-        labels = {"auto": "auto", "cpu": "cpu", "gpu": "gpu"}
+        dev = config.normalize_yolo_device(self.var_yolo_device.get())
+        self.var_yolo_device.set(dev)
+        labels = {"auto": "auto", "cpu": "cpu", "cuda": "cuda"}
         self._apply_choice_setting(
             "YOLO_DEVICE",
             dev,
             self.tr("log.yoloDeviceChanged", device=labels.get(dev, dev)),
+        )
+
+    def _on_full_rate_wait_hook_toggle(self):
+        """切换等待提竿阶段是否满帧检测。"""
+        self._apply_bool_setting(
+            "FULL_RATE_WAIT_HOOK",
+            self.var_full_rate_wait_hook.get(),
+            self.tr("log.fullRateWaitHookOn"),
+            self.tr("log.fullRateWaitHookOff"),
         )
 
     def _update_yolo_status(self):

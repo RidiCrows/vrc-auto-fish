@@ -39,12 +39,17 @@ _yolo_device_used = None
 def _get_yolo_detector(force_reload=False):
     """延迟加载 YOLO 检测器（避免未安装 ultralytics 时报错）"""
     global _yolo_detector, _yolo_device_used
+    current_device = config.normalize_yolo_device(config.YOLO_DEVICE)
     if force_reload:
         _yolo_detector = None
-    if _yolo_detector is None or _yolo_device_used != config.YOLO_DEVICE:
+    if _yolo_detector is None or _yolo_device_used != current_device:
         from core.yolo_detector import YoloDetector
-        _yolo_detector = YoloDetector(config.YOLO_MODEL, conf=config.YOLO_CONF)
-        _yolo_device_used = config.YOLO_DEVICE
+        _yolo_detector = YoloDetector(
+            config.YOLO_MODEL,
+            conf=config.YOLO_CONF,
+            device=current_device,
+        )
+        _yolo_device_used = current_device
     return _yolo_detector
 
 
@@ -53,12 +58,13 @@ class FishingBot:
 
     # 鱼模板 → 调试框颜色 (BGR)
     FISH_COLORS = {
-        "fish_generic": (180, 180, 180),
+        "fish_generic": (80, 80, 80),
         "fish_black":   (80, 80, 80),
         "fish_white":   (255, 255, 255),
-        "fish_copper":  (50, 127, 180),
+        "fish_relic":   (50, 127, 180),
         "fish_green":   (0, 255, 0),
-        "fish_teal":    (200, 220, 0),
+        "fish_clover":  (200, 220, 0),
+        "fish_question": (80, 255, 255),
         "fish_blue":    (255, 150, 0),
         "fish_purple":  (200, 50, 200),
         "fish_golden":  (0, 215, 255),
@@ -91,7 +97,7 @@ class FishingBot:
         self.minigame_detection = MinigameDetectionService(
             self.detector,
             self.pd,
-            lambda: self.yolo,
+            lambda: _get_yolo_detector() if config.USE_YOLO else None,
             lambda: self._bar_locked_cx,
         )
 
@@ -276,6 +282,13 @@ class FishingBot:
                         bbox = (yb[0], yb[1], yb[0] + yb[2], yb[1] + yb[3])
                         return True, bbox
                     return True
+                if getattr(config, "YOLO_RAW_DEBUG", False):
+                    fish_name = det.get("fish_name") or "-"
+                    fish_conf = f"{det['fish'][4]:.2f}" if det.get("fish") is not None else "-"
+                    log.info(
+                        f"[YOLO RAW] UI检查: YOLO未检出bar，准备回退模板 "
+                        f"(fish={fish_name}@{fish_conf}, THRESH_BAR={config.THRESH_BAR:.2f})"
+                    )
             except Exception:
                 pass
 
@@ -283,10 +296,19 @@ class FishingBot:
             screen, "bar", config.THRESH_BAR,
             scales=config.BAR_SCALES, search_region=_roi)
         if bar:
+            if getattr(config, "YOLO_RAW_DEBUG", False):
+                log.info(
+                    f"[YOLO RAW] UI检查: 模板bar兜底命中 conf={bar[4]:.3f} "
+                    f"(THRESH_BAR={config.THRESH_BAR:.2f})"
+                )
             if return_bbox:
                 bbox = (bar[0], bar[1], bar[0] + bar[2], bar[1] + bar[3])
                 return True, bbox
             return True
+        if _use_yolo and getattr(config, "YOLO_RAW_DEBUG", False):
+            log.info(
+                f"[YOLO RAW] UI检查: 模板bar兜底也未命中 (THRESH_BAR={config.THRESH_BAR:.2f})"
+            )
         if return_bbox:
             return False, None
         return False
@@ -338,7 +360,7 @@ class FishingBot:
     def _detect_minigame_ready_now(self, screen):
         """任意阶段检查是否已经满足进入小游戏控制的条件。"""
         skip_success = getattr(config, "SKIP_SUCCESS_CHECK", False)
-        if config.USE_YOLO and self.yolo is None:
+        if config.USE_YOLO:
             try:
                 self.yolo = _get_yolo_detector()
             except Exception:
@@ -494,6 +516,11 @@ class FishingBot:
             except Exception:
                 pass
 
+    @staticmethod
+    def _wait_hook_sleep_interval() -> float:
+        """等待提竿阶段的节流间隔。"""
+        return 0.0 if getattr(config, "FULL_RATE_WAIT_HOOK", False) else 0.05
+
     def _detect_worker_fn(self, frame_q: queue.Queue,
                           result_q: queue.Queue,
                           stop_evt: threading.Event,
@@ -531,6 +558,7 @@ class FishingBot:
         wait_s = config.BITE_FORCE_HOOK
         log.info_t("bot.log.waitHook", seconds=wait_s)
         wait_t0 = time.time()
+        wait_sleep = self._wait_hook_sleep_interval()
         while self.running:
             wait_elapsed = time.time() - wait_t0
             if wait_elapsed >= wait_s:
@@ -571,7 +599,8 @@ class FishingBot:
                         break
             except Exception:
                 pass
-            time.sleep(0.05)
+            if wait_sleep > 0:
+                time.sleep(wait_sleep)
 
         if not self.running:
             return False, entered_early

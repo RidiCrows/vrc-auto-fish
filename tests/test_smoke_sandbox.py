@@ -248,6 +248,23 @@ class SmokeSandboxTests(unittest.TestCase):
         self.assertEqual(bot.input.safe_release_calls, 1)
         self.assertEqual(bot.input.click_calls, 1)
 
+    def test_wait_for_minigame_entry_skips_sleep_when_full_rate_enabled(self):
+        bot = make_sandbox_bot()
+        bot._grab = lambda: np.zeros((8, 8, 3), dtype=np.uint8)
+        bot._detect_ui_once = lambda screen: False
+        bot._hook_fish = lambda: True
+
+        with patch.object(config, "IL_RECORD", False), \
+                patch.object(config, "FULL_RATE_WAIT_HOOK", True), \
+                patch.object(config, "BITE_FORCE_HOOK", 0.5), \
+                patch("core.bot.time.time", side_effect=[0.0, 0.0, 0.6]), \
+                patch("core.bot.time.sleep") as sleep_mock:
+            ok, entered = FishingBot._wait_for_minigame_entry(bot, False, False)
+
+        self.assertTrue(ok)
+        self.assertTrue(entered)
+        sleep_mock.assert_not_called()
+
     @staticmethod
     def _stop_after_press(bot):
         bot.running = False

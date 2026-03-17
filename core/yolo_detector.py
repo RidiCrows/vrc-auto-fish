@@ -4,18 +4,20 @@ YOLO 目标检测器
 封装 ultralytics YOLO 推理，提供与模板匹配 Detector 兼容的接口。
 
 检测类别:
-  0 = fish_generic / 旧 fish
+  0 = fish_black / 旧 fish / fish_generic
   1-9 = fish_* 多颜色鱼
   10 = bar
   11 = track
   12 = progress
   13 = prog_hook
-  14 = fish_teal
+  14 = fish_clover
+  15 = fish_question
 """
 
 import os
 import cv2
 import numpy as np
+import config
 from utils.logger import log
 
 _YOLO_AVAILABLE = False
@@ -36,14 +38,30 @@ class YoloDetector:
 
     @staticmethod
     def _normalize_fish_class_name(class_name: str) -> str | None:
-        """兼容旧版 fish 与新版 fish_generic / fish_* 多颜色类别。"""
+        """兼容旧版 fish / fish_generic 与新版 fish_* 多颜色类别。"""
         if class_name == "fish":
-            return "fish_generic"
-        if class_name == "fish_generic":
-            return class_name
+            return "fish_black"
+        class_name = config.LEGACY_FISH_KEY_ALIASES.get(class_name, class_name)
         if class_name.startswith("fish_"):
             return class_name
         return None
+
+    @staticmethod
+    def normalize_device_preference(device: str | None) -> str:
+        return config.normalize_yolo_device(device)
+
+    @staticmethod
+    def select_runtime_device(device: str | None, cuda_available: bool):
+        normalized = YoloDetector.normalize_device_preference(device)
+        if normalized == "cpu":
+            return "cpu", "cpu"
+        if normalized == "cuda":
+            if not cuda_available:
+                raise RuntimeError("CUDA 不可用")
+            return 0, "cuda"
+        if cuda_available:
+            return 0, "cuda"
+        return "cpu", "cpu"
 
     def __init__(self, model_path: str, conf: float = 0.5, device="auto"):
         if not _YOLO_AVAILABLE:
@@ -56,20 +74,15 @@ class YoloDetector:
         self.conf = conf
         self.model = YOLO(model_path)
 
-        import config as _cfg
-        dev_pref = getattr(_cfg, "YOLO_DEVICE", "auto")
+        dev_pref = self.normalize_device_preference(device)
         cuda_ok = False
         try:
             import torch
             cuda_ok = torch.cuda.is_available()
         except Exception:
             pass
-        if dev_pref == "cpu" or not cuda_ok:
-            target_dev = "cpu"
-        elif dev_pref == "gpu":
-            target_dev = 0
-        else:
-            target_dev = 0
+        target_dev, device_label = self.select_runtime_device(dev_pref, cuda_ok)
+        self._device_label = device_label
 
         warmup_img = np.zeros((640, 640, 3), dtype=np.uint8)
 
@@ -86,14 +99,16 @@ class YoloDetector:
                         warmup_img, conf=0.5, device=target_dev,
                         verbose=False, imgsz=640,
                     )
+                self._device = target_dev
                 pass  # GPU 预热完成
                 return
             except Exception as e:
-                if dev_pref == "gpu":
-                    raise RuntimeError(f"[YOLO] 强制 GPU 模式但初始化失败: {e}")
+                if dev_pref == "cuda":
+                    raise RuntimeError(f"[YOLO] 强制 CUDA 模式但初始化失败: {e}")
                 log.warning_t("yolo.log.gpuFallback", error=e)
 
         self._device = "cpu"
+        self._device_label = "cpu"
         pass  # 静默加载 CPU
         self.model.predict(
             warmup_img, conf=0.5, device="cpu",

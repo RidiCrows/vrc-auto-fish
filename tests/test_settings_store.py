@@ -34,8 +34,10 @@ class SettingsStoreTests(unittest.TestCase):
         self.settings_file = os.path.join(self.tmpdir.name, "settings.json")
         self.old_settings_file = config.SETTINGS_FILE
         self.old_language = config.LANGUAGE
+        self.old_full_rate_wait_hook = config.FULL_RATE_WAIT_HOOK
         config.SETTINGS_FILE = self.settings_file
         config.LANGUAGE = "zh-CN"
+        config.FULL_RATE_WAIT_HOOK = False
         self.log_messages = []
         self.rebuild_calls = []
         self.app = SimpleNamespace(
@@ -45,8 +47,17 @@ class SettingsStoreTests(unittest.TestCase):
             },
             _param_entries={"SUCCESS_PROGRESS": FakeEntry()},
             PARAM_DEFAULTS={"HOLD_MIN_S": 0.025, "SUCCESS_PROGRESS": 0.55},
-            SETTINGS_DEFAULTS={"SKIP_SUCCESS_CHECK": False, "SYNC_PD_MODE": True},
-            PERSISTED_CONFIG_ATTRS=("LANGUAGE", "SKIP_SUCCESS_CHECK", "SYNC_PD_MODE"),
+            SETTINGS_DEFAULTS={
+                "SKIP_SUCCESS_CHECK": False,
+                "SYNC_PD_MODE": True,
+                "FULL_RATE_WAIT_HOOK": False,
+            },
+            PERSISTED_CONFIG_ATTRS=(
+                "LANGUAGE",
+                "SKIP_SUCCESS_CHECK",
+                "SYNC_PD_MODE",
+                "FULL_RATE_WAIT_HOOK",
+            ),
             var_grouped_params=FakeVar(True),
             var_preset_name=FakeVar(""),
             var_language=FakeVar("简体中文"),
@@ -54,6 +65,7 @@ class SettingsStoreTests(unittest.TestCase):
             var_sync_pd_mode=FakeVar(True),
             var_anti_mode=FakeVar("jump"),
             var_shake_time=FakeVar("0.020"),
+            var_full_rate_wait_hook=FakeVar(False),
             _log_msg=self.log_messages.append,
             _log_t=lambda key, **kwargs: self.log_messages.append((key, kwargs)),
             _update_success_threshold_state=lambda: None,
@@ -69,6 +81,7 @@ class SettingsStoreTests(unittest.TestCase):
     def tearDown(self):
         config.SETTINGS_FILE = self.old_settings_file
         config.LANGUAGE = self.old_language
+        config.FULL_RATE_WAIT_HOOK = self.old_full_rate_wait_hook
         set_language(self.old_language)
         config.HOLD_MIN_S = self.old_hold_min
         config.SUCCESS_PROGRESS = self.old_success_progress
@@ -130,6 +143,27 @@ class SettingsStoreTests(unittest.TestCase):
         config.LANGUAGE = "en-US"
         data = self.store.collect_settings_data()
         self.assertEqual(data["LANGUAGE"], "en-US")
+
+    def test_apply_loaded_whitelist_migrates_legacy_fish_keys(self):
+        handled = self.store.apply_loaded_setting(
+            "FISH_WHITELIST",
+            {"fish_teal": False, "fish_copper": True, "fish_generic": False},
+        )
+        self.assertTrue(handled)
+        self.assertFalse(config.FISH_WHITELIST["fish_clover"])
+        self.assertTrue(config.FISH_WHITELIST["fish_relic"])
+        self.assertFalse(config.FISH_WHITELIST["fish_black"])
+
+    def test_apply_loaded_setting_normalizes_legacy_gpu_device_name(self):
+        handled = self.store.apply_loaded_setting("YOLO_DEVICE", "gpu")
+        self.assertTrue(handled)
+        self.assertEqual(config.YOLO_DEVICE, "cuda")
+
+    def test_apply_loaded_setting_updates_full_rate_wait_hook(self):
+        handled = self.store.apply_loaded_setting("FULL_RATE_WAIT_HOOK", True)
+        self.assertTrue(handled)
+        self.assertTrue(config.FULL_RATE_WAIT_HOOK)
+        self.assertTrue(self.app.var_full_rate_wait_hook.get())
 
 
 if __name__ == "__main__":

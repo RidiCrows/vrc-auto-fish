@@ -126,13 +126,16 @@ class RuntimeControllerTests(unittest.TestCase):
             controller.update_yolo_status()
         self.assertIn("模型", app.var_yolo_status.get())
 
-    def test_fish_pairs_include_fish_teal(self):
+    def test_fish_pairs_include_new_yolo_only_fish_classes(self):
         app, _logs = self.make_app()
         controller = AppRuntimeController(app)
 
         fish_pairs = dict(controller._fish_pairs())
 
-        self.assertEqual(fish_pairs["fish_teal"], t("fish.fish_teal"))
+        self.assertEqual(fish_pairs["fish_green"], t("fish.fish_green"))
+        self.assertEqual(fish_pairs["fish_clover"], t("fish.fish_clover"))
+        self.assertEqual(fish_pairs["fish_question"], t("fish.fish_question"))
+        self.assertNotIn("fish_generic", fish_pairs)
 
 
 if __name__ == "__main__":

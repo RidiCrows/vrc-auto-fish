@@ -49,9 +49,10 @@ collect -> label -> train
 
 Current classes and default hotkeys:
 
-- `F`: `fish_generic`
+- `F`: `fish_black`
+- `?`: `fish_question`
 - `1`: `fish_white`
-- `2`: `fish_copper`
+- `2`: `fish_relic`
 - `3`: `fish_green`
 - `4`: `fish_blue`
 - `5`: `fish_purple`
@@ -59,7 +60,7 @@ Current classes and default hotkeys:
 - `7`: `fish_red`
 - `8`: `fish_pink`
 - `9`: `fish_rainbow`
-- `0`: `fish_teal`
+- `0`: `fish_clover`
 - `B`: `bar`
 - `T`: `track`
 - `P`: `progress`
@@ -136,7 +137,7 @@ Useful options:
 
 Default class mapping:
 
-- `fish -> fish_generic`
+- `fish -> fish_black`
 - `bar -> bar`
 - `track -> track`
 - `progress -> progress`
@@ -170,8 +171,9 @@ python -m fish_trainer.gui
 
 The GUI provides buttons for collection, labeling, relabeling, migration, training, and exporting datasets.
 
-## Note On `fish_teal`
+## Note On `fish_clover`
 
-- The labeler already supports `fish_teal` on key `0`
-- Whether the training YAML currently declares `fish_teal` depends on the synced dataset config
+- The labeler already supports `fish_clover` on key `0`
+- The legacy name `fish_teal` is kept as a compatibility alias to `fish_clover`
+- Whether the training YAML currently declares `fish_clover` depends on the synced dataset config
 - Treat the labeler behavior and the training YAML declaration as related, but not automatically identical

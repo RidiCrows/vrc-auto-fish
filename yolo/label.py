@@ -15,6 +15,7 @@ import cv2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import config
 from yolo.classes import (
     CLASS_COLORS,
     CLASS_NAMES,
@@ -52,7 +53,7 @@ KEY_CTRL_D = 4
 
 def short_help():
     return (
-        "[F]=generic [1-9,0]=fish colors [B]=bar [T]=track [P]=progress [K]=hook "
+        "[F]=black [1-9,0]=fish colors [?]=question [B]=bar [T]=track [P]=progress [K]=hook "
         "[A]=auto [[/]]=box-/+ [,/.;']=move [J]=prev-image [N/M]=prev/next-class "
         "[Z]=undo [X]=clear [Ctrl+D]=delete [H]=help [S]=save [D]=skip [Q]=quit"
     )
@@ -82,15 +83,19 @@ def print_help():
 
 def normalize_class_name(class_name):
     if class_name == "fish":
-        return "fish_generic"
+        return "fish_black"
+    class_name = config.LEGACY_FISH_KEY_ALIASES.get(class_name, class_name)
     if class_name in CLASS_NAME_TO_ID:
         return class_name
     return None
 
 
 def resolve_predict_device(device_name):
-    if device_name != "auto":
-        return device_name
+    normalized = config.normalize_yolo_device(device_name)
+    if normalized == "cuda":
+        return 0
+    if normalized != "auto":
+        return normalized
     try:
         import torch
         return 0 if torch.cuda.is_available() else "cpu"

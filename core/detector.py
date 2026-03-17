@@ -634,7 +634,7 @@ class ImageDetector:
                 if h_dom < 15 or h_dom > 165:
                     result = "fish_red"
                 elif h_dom < 25:
-                    result = "fish_copper"
+                    result = "fish_relic"
                 elif h_dom < 40:
                     result = "fish_golden"
                 elif h_dom < 80:

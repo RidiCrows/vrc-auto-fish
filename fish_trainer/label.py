@@ -40,7 +40,7 @@ img_orig = None
 
 def short_help():
     return (
-        "[F]=generic [1-9,0]=fish colors [B]=bar [T]=track [P]=progress "
+        "[F]=black [1-9,0]=fish colors [?]=question [B]=bar [T]=track [P]=progress "
         "[N/M]=prev/next [Z]=undo [X]=clear [H]=help [S]=save [D]=skip [Q]=quit"
     )
 

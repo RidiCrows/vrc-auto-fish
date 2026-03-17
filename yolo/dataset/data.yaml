@@ -3,9 +3,9 @@ train: images/train
 val: images/val
 
 names:
-  0: fish_generic
+  0: fish_black
   1: fish_white
-  2: fish_copper
+  2: fish_relic
   3: fish_green
   4: fish_blue
   5: fish_purple
@@ -17,3 +17,5 @@ names:
   11: track
   12: progress
   13: prog_hook
+  14: fish_clover
+  15: fish_question

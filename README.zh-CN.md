@@ -146,7 +146,7 @@ python -m yolo.label --relabel --predict-model yolo\runs\fish_detect\weights\bes
 - `--auto-predict` 必须配合 `--predict-model` 使用
 - 在标注器里按 `A` 可以对当前图片执行一次自动打标
 - `yolo.label` 支持右键选框、左键重画覆盖、`J` 回上一张、`Ctrl+D` 删除当前图片、`[` / `]` 缩放已选框和 `,` `.` `;` `'` 微调框
-- 当前 `yolo` 标注器类别包含运行时相关的 `progress`、`prog_hook`，并已追加 `fish_teal`
+- 当前 `yolo` 标注器类别包含运行时相关的 `progress`、`prog_hook`，并已追加 `fish_clover`
 
 ### `fish_trainer/`：独立多颜色鱼链路
 
@@ -168,7 +168,7 @@ python -m fish_trainer.gui
 
 ### 当前需要注意的类目现状
 
-- 标注器已经支持 `fish_teal`
+- 标注器已经支持 `fish_clover`
 - `yolo.label` 还额外支持 `prog_hook`
 - 但当前训练 YAML 是否已完全同步到所有新增类别，需要单独核对；文档以下面各工具当前实现为准，不默认夸大为“训练配置已完整覆盖全部新增类”
 

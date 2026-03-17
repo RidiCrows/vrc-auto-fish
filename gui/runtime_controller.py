@@ -21,12 +21,12 @@ class AppRuntimeController:
     """封装 FishingApp 的运行时动作。"""
 
     FISH_KEYS = [
-        "fish_generic",
         "fish_black",
         "fish_white",
-        "fish_copper",
+        "fish_relic",
         "fish_green",
-        "fish_teal",
+        "fish_clover",
+        "fish_question",
         "fish_blue",
         "fish_purple",
         "fish_golden",

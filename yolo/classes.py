@@ -5,9 +5,9 @@ YOLO 多颜色鱼类别定义
 """
 
 CLASS_NAMES = {
-    0: "fish_generic",
+    0: "fish_black",
     1: "fish_white",
-    2: "fish_copper",
+    2: "fish_relic",
     3: "fish_green",
     4: "fish_blue",
     5: "fish_purple",
@@ -19,11 +19,12 @@ CLASS_NAMES = {
     11: "track",
     12: "progress",
     13: "prog_hook",
-    14: "fish_teal",
+    14: "fish_clover",
+    15: "fish_question",
 }
 
 CLASS_COLORS = {
-    0: (0, 255, 0),
+    0: (80, 80, 80),
     1: (255, 255, 255),
     2: (60, 140, 200),
     3: (0, 220, 0),
@@ -38,12 +39,13 @@ CLASS_COLORS = {
     12: (0, 200, 255),
     13: (180, 180, 180),
     14: (200, 220, 0),
+    15: (80, 255, 255),
 }
 
 DISPLAY_NAMES = {
-    0: "通用鱼",
+    0: "黑鱼",
     1: "白鱼",
-    2: "铜鱼",
+    2: "遗物",
     3: "绿鱼",
     4: "蓝鱼",
     5: "紫鱼",
@@ -55,13 +57,14 @@ DISPLAY_NAMES = {
     11: "轨道",
     12: "进度条",
     13: "进度钩",
-    14: "青绿色鱼",
+    14: "四叶草",
+    15: "问号鱼",
 }
 
 OVERLAY_NAMES = {
-    0: "fish_generic",
+    0: "fish_black",
     1: "fish_white",
-    2: "fish_copper",
+    2: "fish_relic",
     3: "fish_green",
     4: "fish_blue",
     5: "fish_purple",
@@ -73,7 +76,8 @@ OVERLAY_NAMES = {
     11: "track",
     12: "progress",
     13: "prog_hook",
-    14: "fish_teal",
+    14: "fish_clover",
+    15: "fish_question",
 }
 
 KEY_TO_CLASS = {
@@ -92,6 +96,7 @@ KEY_TO_CLASS = {
     ord("p"): 12,
     ord("k"): 13,
     ord("0"): 14,
+    ord("/"): 15,
 }
 
 CLASS_SHORTCUTS = {
@@ -110,6 +115,7 @@ CLASS_SHORTCUTS = {
     12: "P",
     13: "K",
     14: "0",
+    15: "?",
 }
 
 
