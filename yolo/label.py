@@ -25,7 +25,8 @@ from yolo.classes import (
     OVERLAY_NAMES,
 )
 from yolo.console import safe_print
-from yolo.paths import TRAIN_IMG, TRAIN_LBL, UNLABELED, VAL_IMG, VAL_LBL, ensure_dataset_dirs
+import yolo.paths
+from yolo.paths import ensure_dataset_dirs
 from trainer_common.labeling import (
     build_label_parser,
     list_relabel_entries,
@@ -34,6 +35,13 @@ from trainer_common.labeling import (
     save_new_labeled_entry,
     write_yolo_labels,
 )
+
+# 使用模块引用以支持动态路径更新
+TRAIN_IMG = yolo.paths.TRAIN_IMG
+TRAIN_LBL = yolo.paths.TRAIN_LBL
+UNLABELED = yolo.paths.UNLABELED
+VAL_IMG = yolo.paths.VAL_IMG
+VAL_LBL = yolo.paths.VAL_LBL
 
 drawing = False
 ix = iy = 0
@@ -620,6 +628,7 @@ def label_loop(file_pairs, save_func, mode_name):
 
 def build_parser():
     parser = build_label_parser("YOLO 多颜色鱼标注工具")
+    parser.add_argument("--base-dir", type=str, default="", help="数据目录（可选，默认使用配置路径）")
     parser.add_argument("--predict-model", type=str, default="", help="自动打标模型路径")
     parser.add_argument("--predict-conf", type=float, default=0.25, help="自动打标置信度阈值")
     parser.add_argument("--predict-device", type=str, default="auto", help="自动打标设备，如 auto/cpu/cuda")
@@ -629,11 +638,30 @@ def build_parser():
 
 
 def main(argv=None):
-    global auto_labeler, auto_predict_enabled
+    global auto_labeler, auto_predict_enabled, TRAIN_IMG, TRAIN_LBL, UNLABELED, VAL_IMG, VAL_LBL
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    ensure_dataset_dirs()
+    # 如果提供了自定义数据目录，更新 yolo.paths 中的全局路径
+    if args.base_dir:
+        base_dir = os.path.abspath(args.base_dir)
+        yolo.paths.BASE = base_dir
+        yolo.paths.UNLABELED = os.path.join(base_dir, "images", "unlabeled")
+        yolo.paths.TRAIN_IMG = os.path.join(base_dir, "images", "train")
+        yolo.paths.TRAIN_LBL = os.path.join(base_dir, "labels", "train")
+        yolo.paths.VAL_IMG = os.path.join(base_dir, "images", "val")
+        yolo.paths.VAL_LBL = os.path.join(base_dir, "labels", "val")
+        # 更新本模块中的全局变量
+        TRAIN_IMG = yolo.paths.TRAIN_IMG
+        TRAIN_LBL = yolo.paths.TRAIN_LBL
+        UNLABELED = yolo.paths.UNLABELED
+        VAL_IMG = yolo.paths.VAL_IMG
+        VAL_LBL = yolo.paths.VAL_LBL
+
+    # 创建所需的目录
+    for dir_path in [UNLABELED, TRAIN_IMG, TRAIN_LBL, VAL_IMG, VAL_LBL]:
+        os.makedirs(dir_path, exist_ok=True)
+    
     auto_predict_enabled = bool(args.auto_predict)
 
     if args.predict_model:

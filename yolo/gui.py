@@ -25,6 +25,7 @@ from utils.i18n import available_languages, init_language, set_language, t, writ
 def build_parser():
     parser = argparse.ArgumentParser(description="YOLO Trainer GUI")
     parser.add_argument("--tool", choices=("collect", "label"), help="内部子工具入口")
+    parser.add_argument("--base-dir", type=str, default="", help="数据目录（可选，默认使用配置路径）")
     parser.add_argument("--fps", type=float, default=2.0, help="采集 FPS")
     parser.add_argument("--roi", action="store_true", help="采集时只截取 ROI")
     parser.add_argument("--max", type=int, default=0, help="采集最大截图数")
@@ -37,11 +38,14 @@ def build_parser():
 
 def dispatch_tool(args):
     if args.tool == "collect":
-        collect.main([
+        collect_args = [
             "--fps", str(args.fps),
             "--max", str(args.max),
             * (["--roi"] if args.roi else []),
-        ])
+        ]
+        if args.base_dir:
+            collect_args.extend(["--base-dir", args.base_dir])
+        collect.main(collect_args)
         return True
     if args.tool == "label":
         label_args = ["--split", str(args.split)]
@@ -51,6 +55,8 @@ def dispatch_tool(args):
             label_args.extend(["--predict-model", args.predict_model])
         if args.auto_predict:
             label_args.append("--auto-predict")
+        if args.base_dir:
+            label_args.extend(["--base-dir", args.base_dir])
         label.main(label_args)
         return True
     return False
@@ -372,6 +378,7 @@ class YoloTrainerGUI:
                 "--fps", str(fps),
                 "--max", str(max_count),
                 * (["--roi"] if self.roi_var.get() else []),
+                "--base-dir", self.base_dir_var.get(),
             ],
         )
         self.start_process(cmd, "collect")
@@ -396,6 +403,7 @@ class YoloTrainerGUI:
 
         label_args = [
             "--split", str(split),
+            "--base-dir", self.base_dir_var.get(),
         ]
         if relabel:
             label_args.append("--relabel")
