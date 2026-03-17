@@ -44,6 +44,7 @@ img_orig = None
 selected_box_idx = -1
 auto_labeler = None
 auto_predict_enabled = False
+selection_hit_indices = ()
 
 CLASS_NAME_TO_ID = {name: cls_id for cls_id, name in CLASS_NAMES.items()}
 BOX_MOVE_STEP = 2
@@ -54,7 +55,7 @@ KEY_CTRL_D = 4
 def short_help():
     return (
         "[F]=black [1-9,0]=fish colors [?]=question [B]=bar [T]=track [P]=progress [K]=hook "
-        "[A]=auto [[/]]=box-/+ [,/.;']=move [J]=prev-image [N/M]=prev/next-class "
+        "[A]=auto [RClick]=cycle-hit [[/]]=box-/+ [,/.;']=move [J]=prev-image [N/M]=prev/next-class "
         "[Z]=undo [X]=clear [Ctrl+D]=delete [H]=help [S]=save [D]=skip [Q]=quit"
     )
 
@@ -69,6 +70,7 @@ def print_help():
             f"{DISPLAY_NAMES.get(cls_id, CLASS_NAMES[cls_id])} ({CLASS_NAMES[cls_id]})"
         )
     safe_print("  [A] 使用模型自动打标当前图片（覆盖当前框）")
+    safe_print("  右键点重叠区域: 在命中的框之间循环切换选中")
     safe_print("  鼠标右键点框: 选中框；右键点空白: 取消选中")
     safe_print("  选中框后左键重新拉框: 直接覆盖这个框")
     safe_print("  [[ / ]] 缩小/放大选中框")
@@ -192,7 +194,13 @@ def set_selected_box(idx):
     selected_box_idx = max(0, min(idx, len(boxes) - 1))
 
 
+def reset_hit_selection_cycle():
+    global selection_hit_indices
+    selection_hit_indices = ()
+
+
 def clear_selected_box():
+    reset_hit_selection_cycle()
     set_selected_box(-1)
 
 
@@ -203,14 +211,31 @@ def sync_selection_for_target_class(target_cls):
         clear_selected_box()
 
 
-def select_box_at(x, y):
+def hit_box_indices_at(x, y):
+    hits = []
     for idx in range(len(boxes) - 1, -1, -1):
-        cls, x1, y1, x2, y2 = boxes[idx]
+        _cls, x1, y1, x2, y2 = boxes[idx]
         if x1 <= x <= x2 and y1 <= y <= y2:
-            set_selected_box(idx)
-            return cls
-    set_selected_box(-1)
-    return None
+            hits.append(idx)
+    return tuple(hits)
+
+
+def select_box_at(x, y):
+    global selection_hit_indices
+    hit_indices = hit_box_indices_at(x, y)
+    if not hit_indices:
+        clear_selected_box()
+        return None, 0, 0
+
+    if hit_indices == selection_hit_indices and selected_box_idx in hit_indices:
+        next_pos = (hit_indices.index(selected_box_idx) + 1) % len(hit_indices)
+    else:
+        selection_hit_indices = hit_indices
+        next_pos = 0
+
+    chosen_idx = hit_indices[next_pos]
+    set_selected_box(chosen_idx)
+    return boxes[chosen_idx][0], next_pos + 1, len(hit_indices)
 
 
 def clone_boxes(src_boxes):
@@ -378,6 +403,7 @@ def draw_overlay():
             f"class: {OVERLAY_NAMES.get(current_class, '?')} | "
             f"boxes: {len(boxes)} | "
             f"selected: {selected_box_idx if selected_box_idx >= 0 else '-'} | "
+            f"hits: {len(selection_hit_indices) if selection_hit_indices else '-'} | "
             f"{short_help()}"
         ),
         (5, h - 10),
@@ -409,12 +435,18 @@ def mouse_cb(event, x, y, flags, param):
             if not replace_selected_box(new_box):
                 boxes.append(new_box)
                 set_selected_box(len(boxes) - 1)
+            reset_hit_selection_cycle()
             draw_overlay()
             cv2.imshow("YOLO Label Tool", img_display)
     elif event == cv2.EVENT_RBUTTONUP:
-        selected_cls = select_box_at(x, y)
+        selected_cls, hit_pos, hit_count = select_box_at(x, y)
         if selected_cls is not None:
             current_class = selected_cls
+            if hit_count > 1:
+                safe_print(
+                    f"    [选中] 重叠框 {hit_pos}/{hit_count}: "
+                    f"{DISPLAY_NAMES.get(selected_cls, '?')} ({CLASS_NAMES.get(selected_cls, '?')})"
+                )
         draw_overlay()
         cv2.imshow("YOLO Label Tool", img_display)
 
@@ -488,6 +520,7 @@ def label_loop(file_pairs, save_func, mode_name):
             elif key in (ord("z"), ord("Z")):
                 if boxes:
                     removed = boxes.pop()
+                    reset_hit_selection_cycle()
                     set_selected_box(len(boxes) - 1 if boxes else -1)
                     select_current_box_class()
                     safe_print(f"    撤销: {DISPLAY_NAMES.get(removed[0], '?')}")
@@ -495,6 +528,7 @@ def label_loop(file_pairs, save_func, mode_name):
                     cv2.imshow("YOLO Label Tool", img_display)
             elif key in (ord("x"), ord("X")):
                 boxes.clear()
+                reset_hit_selection_cycle()
                 set_selected_box(-1)
                 safe_print("    已清空当前图片全部标注")
                 draw_overlay()
