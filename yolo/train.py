@@ -30,6 +30,9 @@ def build_parser():
 
 def main(argv=None):
     import argparse
+    if argv is None:
+        argv = sys.argv[1:]
+    
     parser = build_parser()
     args, remaining = parser.parse_known_args(argv)
     
